@@ -15,6 +15,7 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
     vol     = float(constants.get("vol", 1.0))            # µL
     vsl     = float(constants.get("vsl", 0.0))            # mm/s
     hz      = float(constants.get("sampl_rate_hz", 1.0))  # Hz
+    gamete_r_mm = float(constants.get("gamete_r", 0.0)) / 1_000.0
 
     # ---------- 形状ごとの空間パラメータ（mm） --------------------------
     if shape == "cube":
@@ -49,16 +50,19 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
         raise ValueError(f"未知の shape: {shape}")
 
     # ---------- 共通パラメータ ------------------------------------------
+
     spatial.update(vsl=vsl,
                    step_length=vsl / hz if hz else 0.0,
                    limit=1e-9)
+
 
 
     constants.update(spatial)
     # ★ADD: ここで派生値をすべて表示
     print("[DEBUG] derived_constants =", {k: constants[k] for k in (
         "vsl", "step_length",
-        "x_min", "x_max", "y_min", "y_max", "z_min", "z_max"
+        "x_min", "x_max", "y_min", "y_max", "z_min", "z_max",
+        "gamete_r"
     )})
     return constants
 
