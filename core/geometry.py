@@ -66,18 +66,25 @@ class CubeShape(BaseShape):
         if "vol" not in self.constants:
             raise ValueError("CubeShape: constants に 'vol' か 'vol_um3' が必要です")
 
-        # ------ 一辺長 edge_um と limits を派生変数として計算 ------
+        # ------ 一辺長 edge_um を計算（常に µm 単位） ------
         vol_um3 = self.constants["vol"] * 1e9        # µm³
         edge_um = vol_um3 ** (1.0 / 3.0)             # 一辺 [µm]
-        half = edge_um / 2.0
+        self.edge_um = edge_um
 
-        # 派生値を constants に保存（他モジュールでも共通利用可）
-        self.constants.update({
-            "edge_um": edge_um,
-            "x_min": -half, "x_max": half,
-            "y_min": -half, "y_max": half,
-            "z_min": -half, "z_max": half,
-        })
+        # --- limits の設定 ---
+        # derived_constants.calculate_derived_constants で x_min などが
+        # 既に mm 単位で計算されている場合はそれを尊重する。
+        limit_keys = ["x_min", "x_max", "y_min", "y_max", "z_min", "z_max"]
+        if not all(k in self.constants for k in limit_keys):
+            # 派生値が無い場合のみここで計算する（mm単位に変換）
+            half_mm = edge_um / 2.0 / 1000.0
+            self.constants.update({
+                "x_min": -half_mm, "x_max": half_mm,
+                "y_min": -half_mm, "y_max": half_mm,
+                "z_min": -half_mm, "z_max": half_mm,
+            })
+        # edge_um は常に保存しておく
+        self.constants["edge_um"] = edge_um
         # -------------------------------------------------------------
 
     # ------------- 以降は Masaru さんの元コードをそのまま残す -------------

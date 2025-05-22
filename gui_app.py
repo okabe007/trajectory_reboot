@@ -242,7 +242,7 @@ class SimApp(tk.Tk):
                             ).pack(side="left")
 
         # --- 実行ボタン --------------------------------------------------
-        ttk.Button(parent, text="設定を保存・シミュレーション実行",
+        ttk.Button(parent, text="Save settings and run simulation",
                    command=self._on_save).pack(pady=20)
 
         self._update_spot_angle_state()
