@@ -15,6 +15,7 @@ import numpy as np
 
 from core.simulation import SpermSimulation       # ← ここで派生変数計算を呼ぶ
 from tools.plot_utils import plot_2d_trajectories, plot_3d_trajectories
+from tools.derived_constants import calculate_derived_constants
 
 # ---------------------------------------------------------------------------
 # .ini ファイルのパス
@@ -64,6 +65,11 @@ def save_config(values: dict) -> None:
             ordered[k] = ",".join(v) if isinstance(v, list) else str(v)
         else:
             ordered[k] = str(v)
+    # 保存対象外のキーもまとめて保存
+    for k in sorted(values.keys()):
+        if k in ordered or k in PARAM_ORDER:
+            continue
+        ordered[k] = str(values[k])
     cfg["simulation"] = ordered
     with open(CONFIG_PATH, "w") as f:
         cfg.write(f)
@@ -268,10 +274,17 @@ class SimApp(tk.Tk):
     # ---------------------------------------------------------------------
     def _on_save(self) -> None:
         """
+<<<<<<< ours
         1. GUI の Tk 変数 → self.config_data へ安全にコピー
            （vsl は mm/s、gamete_r は mm）
         2. .ini に保存
         3. シミュレーションを実行
+=======
+        1. GUI の Tk 変数 → self.config_data へ安全にコピー（vsl は mm/s）
+        2. 派生値を計算して self.config_data に追加
+        3. .ini に保存
+        4. シミュレーションを実行
+>>>>>>> theirs
         """
 <<<<<<< ours
         # --- ① Tk → config_data（vsl は mm/s、gamete_r は mm で保持） ---
@@ -301,6 +314,7 @@ class SimApp(tk.Tk):
         modes = [mode] if mode else []
         self.config_data["display_mode"] = modes
 
+<<<<<<< ours
         # --- ② 派生値計算：ini にも保存 ------------------------------
         from tools.derived_constants import calculate_derived_constants
 
@@ -314,8 +328,14 @@ class SimApp(tk.Tk):
                 self.config_data[k] = derived[k]
 
         save_config(self.config_data)
+=======
+        # --- ② 派生値計算 ---------------------------------------------
+        self.config_data = calculate_derived_constants(self.config_data)
+>>>>>>> theirs
 
-        # --- ③ シミュレーション実行 --------------------------------------
+        # --- ③ ini 保存 -----------------------------------------------
+        save_config(self.config_data)
+        # --- ④ シミュレーション実行 --------------------------------------
         sim = SpermSimulation(self.config_data)
         sim.run(self.config_data["sim_repeat"])
 
