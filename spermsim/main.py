@@ -833,7 +833,7 @@ def IO_check_cube(temp_position, constants):
         raise ValueError("Unknown inside/surface/outside combination")
 def IO_check_drop(temp_position, stick_status, constants):
     distance_from_center = LA.norm(temp_position)
-    radius = constants['drop_R']
+    radius = constants['drop_r']
     if distance_from_center > radius + constants['limit']:
         IO_status = IOStatus.SPHERE_OUT
     elif distance_from_center < radius - constants['limit']:
@@ -1619,9 +1619,9 @@ class SpermPlot:
                 ax.add_patch(patches.Circle((0, 0), spot_r, ec='none', facecolor='red', alpha=0.1))
                 ax.axhline(spot_bottom_height, color='gray', linestyle='--', linewidth=0.8)
         elif shape == 'drop':
-            drop_R = constants.get('drop_R', constants['radius'])
+            drop_r = constants.get('drop_r', constants['radius'])
             for ax in axes:
-                ax.add_patch(patches.Circle((0, 0), drop_R, ec='none', facecolor='red', alpha=0.1))
+                ax.add_patch(patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1))
         elif shape == 'cube':
             pass
 
@@ -1634,9 +1634,9 @@ class SpermPlot:
                 ax.add_patch(patches.Circle((0, 0), spot_r, ec='none', facecolor='red', alpha=0.1))
                 ax.axhline(spot_bottom_height, color='gray', linestyle='--', linewidth=0.8)
         elif shape == 'drop':
-            drop_R = constants.get('drop_R', constants['radius'])
+            drop_r = constants.get('drop_r', constants['radius'])
             for ax in axes:
-                ax.add_patch(patches.Circle((0, 0), drop_R, ec='none', facecolor='red', alpha=0.1))
+                ax.add_patch(patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1))
         elif shape == 'cube':
             pass
 class SpermTrajectoryVisualizer:
@@ -1753,12 +1753,12 @@ class SpermTrajectoryVisualizer:
                 sz = spot_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
                 ax.plot_surface(sx, sy, sz, color='red', alpha=0.15)
             elif shape == "drop":
-                drop_R = self.constants.get('drop_R', 5)
+                drop_r = self.constants.get('drop_r', 5)
                 shape_u = np.linspace(0, 2*np.pi, 60)
                 shape_v = np.linspace(0, np.pi, 60)
-                sx = drop_R * np.outer(np.sin(shape_v), np.cos(shape_u))
-                sy = drop_R * np.outer(np.sin(shape_v), np.sin(shape_u))
-                sz = drop_R * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
+                sx = drop_r * np.outer(np.sin(shape_v), np.cos(shape_u))
+                sy = drop_r * np.outer(np.sin(shape_v), np.sin(shape_u))
+                sz = drop_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
                 ax.plot_surface(sx, sy, sz, color='red', alpha=0.15)
             lines = [ax.plot([], [], [], lw=2)[0] for _ in range(num_sperm)]
             def init():
