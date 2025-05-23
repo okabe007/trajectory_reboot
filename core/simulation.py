@@ -170,7 +170,26 @@ class SpermSimulation:
         ax_yz.set_ylabel("Z")
         ax_yz.set_title("YZ projection")
 
-        fig.suptitle(f"shape={constants.get('shape')}, vol={constants.get('vol')}, ...")
+        param_summary = ', '.join(
+            f"{k}={constants.get(k)}" for k in [
+                "shape",
+                "vol",
+                "sperm_conc",
+                "vsl",
+                "deviation",
+            ]
+        )
+        param_summary2 = ', '.join(
+            f"{k}={constants.get(k)}" for k in [
+                "surface_time",
+                "egg_localization",
+                "gamete_r",
+                "sim_min",
+                "sampl_rate_hz",
+                "sim_repeat",
+            ]
+        )
+        fig.suptitle(f"{param_summary}\n{param_summary2}", fontsize=12)
         plt.tight_layout(rect=[0, 0, 1, 0.95])
         if save_path is not None:
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
