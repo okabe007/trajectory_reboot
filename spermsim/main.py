@@ -1489,6 +1489,7 @@ class SpermPlot:
         ])
 
     def _draw_graph(self, shape):
+        print("@@@ draw_graph called")
         plt.close('all')
         plt.rcdefaults()
         if hasattr(self, "already_saved") and self.already_saved:
@@ -1509,6 +1510,17 @@ class SpermPlot:
         if shape != "ceros":
             egg_constants = self.constants.copy()
             egg_x, egg_y, egg_z, *_ , egg_center, _ = placement_of_eggs(egg_constants)
+            
+            # ② 確認用の print 文
+            print("===== 卵子描画前のパラメータ確認 =====")
+            print("@@@gamete_r:", self.constants.get("gamete_r"))
+            print("@@@z_min   :", self.constants.get("z_min"))
+            print("@@@egg_z   :", egg_z)
+            print("@@@描画位置: (egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z) =",
+                (egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z))
+            print("=====================================")
+
+            
             for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
                 ax.add_patch(
                     patches.Circle(
@@ -1612,7 +1624,7 @@ class SpermPlot:
                 ax.add_patch(patches.Circle((0, 0), drop_R, ec='none', facecolor='red', alpha=0.1))
         elif shape == 'cube':
             pass
-def draw_motion_area(self, shape, axes, constants):
+
         if shape == 'spot':
             spot_bottom_radius = constants['spot_bottom_r']
             spot_r = constants['spot_r']
