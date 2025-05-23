@@ -15,6 +15,7 @@ import numpy as np
 
 from core.simulation import SpermSimulation       # ← ここで派生変数計算を呼ぶ
 from tools.plot_utils import plot_2d_trajectories, plot_3d_trajectories
+from tools.derived_constants import calculate_derived_constants
 
 # ---------------------------------------------------------------------------
 # .ini ファイルのパス
@@ -38,7 +39,7 @@ default_values = {
     "deviation": 0.4,
     "surface_time": 2.0,
     "egg_localization": "bottom_center",
-    "gamete_r": 40.0,          # µm
+    "gamete_r": 0.04,          # mm  (GUI 表示は µm)
     "sim_min": 1.0,            # min 実測値ではなく「分」→秒に変換は simulation 側
     "sampl_rate_hz": 4.0,
     "seed_number": "None",
@@ -60,6 +61,11 @@ def save_config(values: dict) -> None:
             ordered[k] = ",".join(v) if isinstance(v, list) else str(v)
         else:
             ordered[k] = str(v)
+    # 保存対象外のキーもまとめて保存
+    for k in sorted(values.keys()):
+        if k in ordered or k in PARAM_ORDER:
+            continue
+        ordered[k] = str(values[k])
     cfg["simulation"] = ordered
     with open(CONFIG_PATH, "w") as f:
         cfg.write(f)
@@ -242,7 +248,7 @@ class SimApp(tk.Tk):
                             ).pack(side="left")
 
         # --- 実行ボタン --------------------------------------------------
-        ttk.Button(parent, text="設定を保存・シミュレーション実行",
+        ttk.Button(parent, text="Save settings and run simulation",
                    command=self._on_save).pack(pady=20)
 
         self._update_spot_angle_state()
@@ -264,17 +270,20 @@ class SimApp(tk.Tk):
     # ---------------------------------------------------------------------
     def _on_save(self) -> None:
         """
-        1. GUI の Tk 変数 → self.config_data へ安全にコピー（vsl は mm/s）
+        1. GUI の Tk 変数 → self.config_data へ安全にコピー
+           （vsl は mm/s、gamete_r は mm）
         2. .ini に保存
         3. シミュレーションを実行
         """
-        # --- ① Tk → config_data（vsl は mm/s で保持） ----------------
+        # --- ① Tk → config_data（vsl, gamete_r は mm で保持） -----
         for k, var in self.tk_vars.items():
             try:
                 if isinstance(var, (tk.DoubleVar, tk.IntVar)):
                     val = float(var.get()) if isinstance(var, tk.DoubleVar) else int(var.get())
                     if k == "vsl":
                         val /= 1000.0  # µm/s → mm/s
+                    elif k == "gamete_r":
+                        val /= 1000.0  # µm  → mm
                     self.config_data[k] = val
                 else:
                     self.config_data[k] = var.get()
@@ -286,10 +295,12 @@ class SimApp(tk.Tk):
         modes = [mode] if mode else []
         self.config_data["display_mode"] = modes
 
-        # --- ② ini 保存 -----------------------------------------------
-        save_config(self.config_data)
+        # --- ② 派生値計算 ---------------------------------------------
+        self.config_data = calculate_derived_constants(self.config_data)
 
-        # --- ③ シミュレーション実行 --------------------------------------
+        # --- ③ ini 保存 -----------------------------------------------
+        save_config(self.config_data)
+        # --- ④ シミュレーション実行 --------------------------------------
         sim = SpermSimulation(self.config_data)
         sim.run(self.config_data["sim_repeat"])
 
@@ -315,6 +326,8 @@ class SimApp(tk.Tk):
                     val = float(v)
                     if k == "vsl":
                         val *= 1000.0  # mm/s → µm/s
+                    elif k == "gamete_r":
+                        val *= 1000.0  # mm  → µm
                     var.set(val)
                 elif isinstance(var, tk.IntVar):
                     var.set(int(float(v)))

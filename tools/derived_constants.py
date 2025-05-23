@@ -12,15 +12,16 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
     """
     # ---------- 基本パラメータ ------------------------------------------
     shape   = str(constants.get("shape", "cube")).lower()
-    vol_ul  = float(constants.get("vol", 1.0))            # µL
-    vsl_mm  = float(constants.get("vsl", 0.0))            # mm/s
+    vol     = float(constants.get("vol", 1.0))            # µL
+    vsl     = float(constants.get("vsl", 0.0))            # mm/s
     hz      = float(constants.get("sampl_rate_hz", 1.0))  # Hz
+    gamete_r = float(constants.get("gamete_r", 0.0)) 
 
     # ---------- 形状ごとの空間パラメータ（mm） --------------------------
     if shape == "cube":
-        edge_mm = vol_ul ** (1 / 3)          # 1 µL = 1 mm³ なのでそのまま立方根
-        h       = edge_mm / 2
-        spatial = dict(edge=edge_mm,
+        edge_length = vol ** (1 / 3)          # 1 µL = 1 mm³ なのでそのまま立方根
+        h       = edge_length / 2
+        spatial = dict(edge=edge_length,
                        x_min=-h, x_max= h,
                        y_min=-h, y_max= h,
                        z_min=-h, z_max= h)
@@ -49,16 +50,19 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
         raise ValueError(f"未知の shape: {shape}")
 
     # ---------- 共通パラメータ ------------------------------------------
-    spatial.update(vsl=vsl_mm,
-                   step_length=vsl_mm / hz if hz else 0.0,
+
+    spatial.update(vsl=vsl,
+                   step_length=vsl / hz if hz else 0.0,
                    limit=1e-9)
+
 
 
     constants.update(spatial)
     # ★ADD: ここで派生値をすべて表示
     print("[DEBUG] derived_constants =", {k: constants[k] for k in (
         "vsl", "step_length",
-        "x_min", "x_max", "y_min", "y_max", "z_min", "z_max"
+        "x_min", "x_max", "y_min", "y_max", "z_min", "z_max",
+        "gamete_r"
     )})
     return constants
 
