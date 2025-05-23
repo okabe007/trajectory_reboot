@@ -39,11 +39,7 @@ default_values = {
     "deviation": 0.4,
     "surface_time": 2.0,
     "egg_localization": "bottom_center",
-<<<<<<< ours
-    "gamete_r": 0.04,          # mm
-=======
     "gamete_r": 0.04,          # mm  (GUI 表示は µm)
->>>>>>> theirs
     "sim_min": 1.0,            # min 実測値ではなく「分」→秒に変換は simulation 側
     "sampl_rate_hz": 4.0,
     "seed_number": "None",
@@ -274,23 +270,12 @@ class SimApp(tk.Tk):
     # ---------------------------------------------------------------------
     def _on_save(self) -> None:
         """
-<<<<<<< ours
         1. GUI の Tk 変数 → self.config_data へ安全にコピー
            （vsl は mm/s、gamete_r は mm）
         2. .ini に保存
         3. シミュレーションを実行
-=======
-        1. GUI の Tk 変数 → self.config_data へ安全にコピー（vsl は mm/s）
-        2. 派生値を計算して self.config_data に追加
-        3. .ini に保存
-        4. シミュレーションを実行
->>>>>>> theirs
         """
-<<<<<<< ours
-        # --- ① Tk → config_data（vsl は mm/s、gamete_r は mm で保持） ---
-=======
         # --- ① Tk → config_data（vsl, gamete_r は mm で保持） -----
->>>>>>> theirs
         for k, var in self.tk_vars.items():
             try:
                 if isinstance(var, (tk.DoubleVar, tk.IntVar)):
@@ -298,11 +283,7 @@ class SimApp(tk.Tk):
                     if k == "vsl":
                         val /= 1000.0  # µm/s → mm/s
                     elif k == "gamete_r":
-<<<<<<< ours
-                        val /= 1000.0  # µm → mm
-=======
                         val /= 1000.0  # µm  → mm
->>>>>>> theirs
                     self.config_data[k] = val
                 else:
                     self.config_data[k] = var.get()
@@ -314,24 +295,8 @@ class SimApp(tk.Tk):
         modes = [mode] if mode else []
         self.config_data["display_mode"] = modes
 
-<<<<<<< ours
-        # --- ② 派生値計算：ini にも保存 ------------------------------
-        from tools.derived_constants import calculate_derived_constants
-
-        derived = calculate_derived_constants(self.config_data.copy())
-        self.config_data["number_of_sperm"] = int(
-            self.config_data.get("sperm_conc", 0.0) *
-            self.config_data.get("vol", 0.0) / 1000.0
-        )
-        for k in ["x_min", "x_max", "step_length"]:
-            if k in derived:
-                self.config_data[k] = derived[k]
-
-        save_config(self.config_data)
-=======
         # --- ② 派生値計算 ---------------------------------------------
         self.config_data = calculate_derived_constants(self.config_data)
->>>>>>> theirs
 
         # --- ③ ini 保存 -----------------------------------------------
         save_config(self.config_data)
@@ -362,11 +327,7 @@ class SimApp(tk.Tk):
                     if k == "vsl":
                         val *= 1000.0  # mm/s → µm/s
                     elif k == "gamete_r":
-<<<<<<< ours
-                        val *= 1000.0  # mm → µm
-=======
                         val *= 1000.0  # mm  → µm
->>>>>>> theirs
                     var.set(val)
                 elif isinstance(var, tk.IntVar):
                     var.set(int(float(v)))
