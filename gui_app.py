@@ -38,7 +38,7 @@ default_values = {
     "deviation": 0.4,
     "surface_time": 2.0,
     "egg_localization": "bottom_center",
-    "gamete_r": 40.0,          # µm
+    "gamete_r": 0.04,          # mm
     "sim_min": 1.0,            # min 実測値ではなく「分」→秒に変換は simulation 側
     "sampl_rate_hz": 4.0,
     "seed_number": "None",
@@ -264,17 +264,20 @@ class SimApp(tk.Tk):
     # ---------------------------------------------------------------------
     def _on_save(self) -> None:
         """
-        1. GUI の Tk 変数 → self.config_data へ安全にコピー（vsl は mm/s）
+        1. GUI の Tk 変数 → self.config_data へ安全にコピー
+           （vsl は mm/s、gamete_r は mm）
         2. .ini に保存
         3. シミュレーションを実行
         """
-        # --- ① Tk → config_data（vsl は mm/s で保持） ----------------
+        # --- ① Tk → config_data（vsl は mm/s、gamete_r は mm で保持） ---
         for k, var in self.tk_vars.items():
             try:
                 if isinstance(var, (tk.DoubleVar, tk.IntVar)):
                     val = float(var.get()) if isinstance(var, tk.DoubleVar) else int(var.get())
                     if k == "vsl":
                         val /= 1000.0  # µm/s → mm/s
+                    elif k == "gamete_r":
+                        val /= 1000.0  # µm → mm
                     self.config_data[k] = val
                 else:
                     self.config_data[k] = var.get()
@@ -315,6 +318,8 @@ class SimApp(tk.Tk):
                     val = float(v)
                     if k == "vsl":
                         val *= 1000.0  # mm/s → µm/s
+                    elif k == "gamete_r":
+                        val *= 1000.0  # mm → µm
                     var.set(val)
                 elif isinstance(var, tk.IntVar):
                     var.set(int(float(v)))
