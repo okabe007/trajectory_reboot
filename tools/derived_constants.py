@@ -15,7 +15,7 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
     vol     = float(constants.get("vol", 1.0))            # µL
     vsl     = float(constants.get("vsl", 0.0))            # mm/s
     hz      = float(constants.get("sampl_rate_hz", 1.0))  # Hz
-    gamete_r_mm = float(constants.get("gamete_r", 0.0)) / 1_000.0
+    gamete_r = float(constants.get("gamete_r", 0.0)) 
 
     # ---------- 形状ごとの空間パラメータ（mm） --------------------------
     if shape == "cube":
