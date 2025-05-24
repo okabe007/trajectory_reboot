@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Tkinter GUI for Sperm Simulation
---------------------------------
-・GUI → .ini 保存 → Simulation 実行 → プロット表示（2D / movie）
-・派生値計算は core/simulation.py 側で行う（mm 単位）
-"""
 
 import os
 import tkinter as tk
@@ -15,7 +7,7 @@ import numpy as np
 import math
 
 from core.simulation import SpermSimulation       # ← ここで派生変数計算を呼ぶ
-from tools.plot_utils import plot_2d_trajectories, plot_3d_trajectories
+from tools.plot_utils import plot_2d_trajectories # plot_3d_trajectories
 from tools.derived_constants import calculate_derived_constants
 
 # ---------------------------------------------------------------------------
