@@ -1,120 +1,126 @@
-diff --git a/tools/derived_constants.py b/tools/derived_constants.py
-index 8d6991c..fe1b703 100644
---- a/tools/derived_constants.py
-+++ b/tools/derived_constants.py
-@@ -1,90 +1,58 @@
- from __future__ import annotations     # ← 1 行目
- from typing import Dict, Tuple
+diff --git a/tools/plot_utils.py b/tools/plot_utils.py
+index c1a40a9..467a6d4 100644
+--- a/tools/plot_utils.py
++++ b/tools/plot_utils.py
+@@ -10,96 +10,120 @@ def _make_save_path(prefix="trajectory", ext="png", dir="Figs_and_Movies"):
+     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+     return f"{dir}/{prefix}_{timestamp}.{ext}"
  
- # ------------------------------------------------------------
- # メイン関数  -------------------------------------------------
- # ------------------------------------------------------------
- def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]:
-     """
-     GUI／.ini で受け取った設定から派生変数を生成するユーティリティ。
-         ・空間座標・形状パラメータ → mm に統一
-         ・速度 vsl                 → mm/s で扱う
-     """
-     # ---------- 基本パラメータ ------------------------------------------
--    shape   = str(constants.get("shape", "cube")).lower()
--    vol     = float(constants.get("vol", 1.0))            # µL
-     vsl     = float(constants.get("vsl", 0.0))            # mm/s
-     hz      = float(constants.get("sampl_rate_hz", 1.0))  # Hz
--    # gamete_r は設定ファイルに保存されている値（mm）をそのまま使用する
--    # 旧設定では µm 単位の値も存在したが、グラフ描画では保存値を直接使う
--    gamete_r = float(constants.get("gamete_r", 0.0))
+ def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel, equal=False):
+     ax.set_xlim(*xlim)
+     ax.set_ylim(*ylim)
+     ax.set_xlabel(xlabel)
+     ax.set_ylabel(ylabel)
+     if equal:
+         ax.set_aspect('equal', adjustable='box')
  
--    # ---------- 形状ごとの空間パラメータ（mm） --------------------------
--    if shape == "cube":
--        edge_length = vol ** (1 / 3)          # 1 µL = 1 mm³ なのでそのまま立方根
--        h       = edge_length / 2
--        spatial = dict(edge=edge_length,
--                       x_min=-h, x_max= h,
--                       y_min=-h, y_max= h,
--                       z_min=-h, z_max= h)
-+    # 単位変換 -----------------------------------------------------
-+    gamete_raw = float(constants.get("gamete_r", 0.0))
-+    gamete_r = gamete_raw / 1_000.0 if gamete_raw > 10 else gamete_raw
-+    constants["gamete_r"] = gamete_r
+ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=None):
+     x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
  
--    elif shape == "spot":
--        # spot_r / spot_bottom_height may already be in mm depending on the
--        # caller.  If the value looks like it is given in micrometers
--        # (typically O(100)), convert it to mm; otherwise use it as is.
--        spot_r_raw = float(constants.get("spot_r", 0.0))
--        spot_bottom_raw = float(constants.get("spot_bottom_height", 0.0))
--        spot_r_mm = spot_r_raw / 1_000.0 if spot_r_raw > 10 else spot_r_raw
--        spot_bottom_mm = (
--            spot_bottom_raw / 1_000.0 if spot_bottom_raw > 10 else spot_bottom_raw
--        )
--        spatial = dict(spot_r=spot_r_mm,
--                       x_min=-spot_r_mm, x_max= spot_r_mm,
--                       y_min=-spot_r_mm, y_max= spot_r_mm,
--                       z_min= spot_bottom_mm - spot_r_mm,
--                       z_max= spot_bottom_mm + spot_r_mm)
-+    if "drop_r" in constants:
-+        r_raw = float(constants["drop_r"])
-+        constants["drop_r"] = r_raw / 1_000.0 if r_raw > 10 else r_raw
-+        constants.setdefault("radius", constants["drop_r"])
+     fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+     axis_configs = [
+         (axs[0], (x_min, x_max), (y_min, y_max), "X", "Y", "XY-projection"),
+         (axs[1], (x_min, x_max), (z_min, z_max), "X", "Z", "XZ-projection"),
+         (axs[2], (y_min, y_max), (z_min, z_max), "Y", "Z", "YZ-projection"),
+     ]
  
--    elif shape == "drop":
--        # drop_r may be provided either in micrometers or millimeters.
--        # Values greater than ~10 are interpreted as micrometers.
--        r_raw = float(constants.get("drop_r", 0.0))
--        r_mm = r_raw / 1_000.0 if r_raw > 10 else r_raw
--        spatial = dict(drop_r=r_mm, radius=r_mm,
--                       x_min=-r_mm, x_max=r_mm,
--                       y_min=-r_mm, y_max=r_mm,
--                       z_min=-r_mm, z_max=r_mm)
-+    if "spot_r" in constants:
-+        r_raw = float(constants["spot_r"])
-+        constants["spot_r"] = r_raw / 1_000.0 if r_raw > 10 else r_raw
-+        constants.setdefault("radius", constants["spot_r"])
+     shape = str(constants.get('shape', '')).lower()
+     drop_r = float(constants.get('drop_r', 0.0))
  
--    elif shape == "ceros":    # テスト用固定範囲
--        spatial = dict(x_min=-8.15, x_max=8.15,
--                       y_min=-8.15, y_max=8.15,
--                       z_min=-8.15, z_max=8.15)
--    else:
--        raise ValueError(f"未知の shape: {shape}")
--
--    # ---------- 共通パラメータ ------------------------------------------
--
--    spatial.update(vsl=vsl,
--                   step_length=vsl / hz if hz else 0.0,
--                   limit=1e-9,
--                   gamete_r=gamete_r)
-+    if "spot_bottom_height" in constants:
-+        b_raw = float(constants["spot_bottom_height"])
-+        constants["spot_bottom_height"] = b_raw / 1_000.0 if b_raw > 10 else b_raw
+     for ax, xlim, ylim, xlabel, ylabel, title in axis_configs:
+-        equal = shape == 'drop'
++        equal = shape in ('drop', 'cube')
+         _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel, equal)
+         ax.set_title(title)
+         if shape == 'drop' and drop_r > 0:
+             ax.add_patch(
+                 patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1)
+             )
++        elif shape == 'cube':
++            width = xlim[1] - xlim[0]
++            height = ylim[1] - ylim[0]
++            ax.add_patch(
++                patches.Rectangle((xlim[0], ylim[0]), width, height,
++                                  ec='none', facecolor='red', alpha=0.1)
++            )
  
-+    if "spot_bottom_r" in constants:
-+        br_raw = float(constants["spot_bottom_r"])
-+        constants["spot_bottom_r"] = br_raw / 1_000.0 if br_raw > 10 else br_raw
+     n_sperm = min(trajs.shape[0], max_sperm or trajs.shape[0])
+     for s in range(n_sperm):
+         axs[0].plot(trajs[s, :, 0], trajs[s, :, 1])
+         axs[1].plot(trajs[s, :, 0], trajs[s, :, 2])
+         axs[2].plot(trajs[s, :, 1], trajs[s, :, 2])
  
-+    # ---------- 共通パラメータ ------------------------------------------
-+    constants.update(
-+        vsl=vsl,
-+        step_length=vsl / hz if hz else 0.0,
-+        limit=1e-9,
-+        gamete_r=gamete_r,
-+    )
+     fig.suptitle(
+         f"shape={constants.get('shape')}, vol={constants.get('volume')}, "
+         f"sperm_conc={constants.get('sperm_conc')}, vsl={constants.get('vsl')}, "
+         f"sim_min={constants.get('sim_min')}, sim_repeat={constants.get('sim_repeat')}",
+         fontsize=10
+     )
+     plt.tight_layout(rect=[0, 0, 1, 0.95])
+     if not save_path:
+         save_path = _make_save_path("trajectory_2d", "png")
+     plt.savefig(save_path, dpi=150)
+     print(f"[INFO] 2D図を保存しました: {save_path}")
+     if show:
+         plt.show()
  
--    constants.update(spatial)
--    # ★ADD: ここで派生値をすべて表示
--    print("[DEBUG] derived_constants =", {k: constants[k] for k in (
--        "vsl", "step_length",
--        "x_min", "x_max", "y_min", "y_max", "z_min", "z_max",
--        "gamete_r"
--    )})
-     return constants
+ def plot_3d_trajectories(traj: np.ndarray, constants: dict, max_sperm: int = 5, show=True):
+     x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
+     n_sperm = min(traj.shape[0], max_sperm)
  
+     fig = plt.figure(figsize=(6, 6))
+     ax = fig.add_subplot(111, projection='3d')
+     for s in range(n_sperm):
+         ax.plot(traj[s, :, 0], traj[s, :, 1], traj[s, :, 2], label=f"Sperm {s}" if n_sperm <= 5 else None)
  
- # ------------------------------------------------------------
- # plot_utils.py 用の軽量ヘルパー --------------------------------
- # ------------------------------------------------------------
- def get_limits(constants: Dict[str, float]) -> Tuple[float, float, float, float, float, float]:
-     """x/y/z 各軸の min・max（mm）を tuple で返す"""
-     return (constants["x_min"], constants["x_max"],
-             constants["y_min"], constants["y_max"],
-             constants["z_min"], constants["z_max"])
+     shape = str(constants.get('shape', '')).lower()
+     drop_r = float(constants.get('drop_r', 0.0))
+     if shape == 'drop' and drop_r > 0:
+         u = np.linspace(0, 2*np.pi, 60)
+         v = np.linspace(0, np.pi, 60)
+         sx = drop_r * np.outer(np.sin(v), np.cos(u))
+         sy = drop_r * np.outer(np.sin(v), np.sin(u))
+         sz = drop_r * np.outer(np.cos(v), np.ones_like(u))
+         ax.plot_surface(sx, sy, sz, color='red', alpha=0.1)
++    elif shape == 'cube':
++        xs = [x_min, x_max]
++        ys = [y_min, y_max]
++        zs = [z_min, z_max]
++        # 6 faces of the cube
++        for z in zs:
++            X, Y = np.meshgrid(xs, ys)
++            Z = np.full_like(X, z)
++            ax.plot_surface(X, Y, Z, color='red', alpha=0.1)
++        for x in xs:
++            Y, Z = np.meshgrid(ys, zs)
++            X = np.full_like(Y, x)
++            ax.plot_surface(X, Y, Z, color='red', alpha=0.1)
++        for y in ys:
++            X, Z = np.meshgrid(xs, zs)
++            Y = np.full_like(X, y)
++            ax.plot_surface(X, Y, Z, color='red', alpha=0.1)
+ 
+     ax.set_xlabel("X")
+     ax.set_ylabel("Y")
+     ax.set_zlabel("Z")
+     ax.set_xlim(x_min, x_max)
+     ax.set_ylim(y_min, y_max)
+     ax.set_zlim(z_min, z_max)
+     ax.set_box_aspect([
+         x_max - x_min,
+         y_max - y_min,
+         z_max - z_min
+     ])
+     ax.set_title("3D Trajectory")
+     if n_sperm <= 5:
+         ax.legend()
+ 
+     fig.suptitle(
+         f"shape={constants.get('shape')}, vol={constants.get('volume')}, "
+         f"sperm_conc={constants.get('sperm_conc')}, vsl={constants.get('vsl')}, "
+         f"sim_min={constants.get('sim_min')}, sim_repeat={constants.get('sim_repeat')}",
+         fontsize=10
+     )
+     save_path = _make_save_path("trajectory_3d", "png")
+     plt.savefig(save_path, dpi=300)
+     print(f"[INFO] 3D図を保存しました: {save_path}")

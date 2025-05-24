@@ -32,12 +32,19 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
     drop_r = float(constants.get('drop_r', 0.0))
 
     for ax, xlim, ylim, xlabel, ylabel, title in axis_configs:
-        equal = shape == 'drop'
+        equal = shape in ('drop', 'cube')
         _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel, equal)
         ax.set_title(title)
         if shape == 'drop' and drop_r > 0:
             ax.add_patch(
                 patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1)
+            )
+        elif shape == 'cube':
+            width = xlim[1] - xlim[0]
+            height = ylim[1] - ylim[0]
+            ax.add_patch(
+                patches.Rectangle((xlim[0], ylim[0]), width, height,
+                                  ec='none', facecolor='red', alpha=0.1)
             )
 
     n_sperm = min(trajs.shape[0], max_sperm or trajs.shape[0])
@@ -78,6 +85,23 @@ def plot_3d_trajectories(traj: np.ndarray, constants: dict, max_sperm: int = 5, 
         sy = drop_r * np.outer(np.sin(v), np.sin(u))
         sz = drop_r * np.outer(np.cos(v), np.ones_like(u))
         ax.plot_surface(sx, sy, sz, color='red', alpha=0.1)
+    elif shape == 'cube':
+        xs = [x_min, x_max]
+        ys = [y_min, y_max]
+        zs = [z_min, z_max]
+        # 6 faces of the cube
+        for z in zs:
+            X, Y = np.meshgrid(xs, ys)
+            Z = np.full_like(X, z)
+            ax.plot_surface(X, Y, Z, color='red', alpha=0.1)
+        for x in xs:
+            Y, Z = np.meshgrid(ys, zs)
+            X = np.full_like(Y, x)
+            ax.plot_surface(X, Y, Z, color='red', alpha=0.1)
+        for y in ys:
+            X, Z = np.meshgrid(xs, zs)
+            Y = np.full_like(X, y)
+            ax.plot_surface(X, Y, Z, color='red', alpha=0.1)
 
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
