@@ -1748,7 +1748,6 @@ class SpermTrajectoryVisualizer:
                     np.ones(np.size(egg_u)), np.cos(egg_v)
                 )
             )
-            ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.2)
             if shape == "spot":
                 spot_r = self.constants.get('spot_r', 5)
                 spot_angle_deg = self.constants.get('spot_angle', 60)
@@ -1767,6 +1766,7 @@ class SpermTrajectoryVisualizer:
                 sy = drop_r * np.outer(np.sin(shape_v), np.sin(shape_u))
                 sz = drop_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
                 ax.plot_surface(sx, sy, sz, color='red', alpha=0.15)
+            ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.2)
             lines = [ax.plot([], [], [], lw=2)[0] for _ in range(num_sperm)]
             def init():
                 for line in lines:
