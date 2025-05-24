@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import ttk
 import configparser
 import numpy as np
+import math
 
 from core.simulation import SpermSimulation       # ← ここで派生変数計算を呼ぶ
 from tools.plot_utils import plot_2d_trajectories, plot_3d_trajectories
@@ -46,6 +47,35 @@ default_values = {
     "sim_repeat": 1,
     "display_mode": ["2D"],    # 文字列リスト
 }
+
+# ---------------------------------------------------------------------------
+# geometry helpers
+# ---------------------------------------------------------------------------
+def _calc_spot_geometry(volume_ul: float, angle_deg: float) -> tuple[float, float, float]:
+    """Return (spot_r_mm, bottom_r_mm, bottom_height_mm) from volume and angle."""
+    angle_rad = math.radians(angle_deg)
+    vol_um3 = volume_ul * 1e9
+
+    def cap_volume(R: float) -> float:
+        h = R * (1 - math.cos(angle_rad))
+        return math.pi * h * h * (3 * R - h) / 3
+
+    low = 0.0
+    high = max(vol_um3 ** (1 / 3), 1.0)
+    while cap_volume(high) < vol_um3:
+        high *= 2.0
+
+    for _ in range(60):
+        mid = (low + high) / 2.0
+        if cap_volume(mid) < vol_um3:
+            low = mid
+        else:
+            high = mid
+
+    R_um = (low + high) / 2.0
+    bottom_r_um = R_um * math.sin(angle_rad)
+    bottom_height_um = -R_um * math.cos(angle_rad)
+    return R_um / 1000.0, bottom_r_um / 1000.0, bottom_height_um / 1000.0
 
 # ---------------------------------------------------------------------------
 # .ini 読み書きユーティリティ
@@ -295,14 +325,60 @@ class SimApp(tk.Tk):
         modes = [mode] if mode else []
         self.config_data["display_mode"] = modes
 
-        # --- drop_r 計算 -----------------------------------------------
+        # --- ② shape specific parameters -------------------------------
         shape = str(self.config_data.get("shape", "")).lower()
-        if shape == "drop":
-            vol_ul = float(self.config_data.get("vol", 0.0))
-            r_um = ((3 * vol_ul * 1e9) / (4 * np.pi)) ** (1.0 / 3.0)
-            self.config_data["drop_r"] = r_um
+        vol_ul = float(self.config_data.get("vol", 0.0))
 
-        # --- ② 派生値計算 ---------------------------------------------
+        if shape == "cube":
+            edge = vol_ul ** (1 / 3)
+            half = edge / 2
+            self.config_data.update(
+                edge=edge,
+                x_min=-half, x_max=half,
+                y_min=-half, y_max=half,
+                z_min=-half, z_max=half,
+            )
+
+        elif shape == "drop":
+            r = (3 * vol_ul / (4 * math.pi)) ** (1 / 3)
+            self.config_data.update(
+                drop_r=r,
+                radius=r,
+                x_min=-r, x_max=r,
+                y_min=-r, y_max=r,
+                z_min=-r, z_max=r,
+            )
+
+        elif shape == "spot":
+            angle = float(self.config_data.get("spot_angle", 0.0))
+            spot_r, bottom_r, bottom_h = _calc_spot_geometry(vol_ul, angle)
+            self.config_data.update(
+                spot_r=spot_r,
+                spot_bottom_r=bottom_r,
+                spot_bottom_height=bottom_h,
+                radius=spot_r,
+                x_min=-spot_r, x_max=spot_r,
+                y_min=-spot_r, y_max=spot_r,
+                z_min=bottom_h - spot_r,
+                z_max=bottom_h + spot_r,
+            )
+
+        elif shape == "ceros":
+            self.config_data.update(
+                x_min=-8.15, x_max=8.15,
+                y_min=-8.15, y_max=8.15,
+                z_min=-8.15, z_max=8.15,
+            )
+
+        # --- ③ generic parameters ------------------------------------
+        vsl = float(self.config_data.get("vsl", 0.0))
+        hz = float(self.config_data.get("sampl_rate_hz", 1.0))
+        self.config_data.update(
+            step_length=vsl / hz if hz else 0.0,
+            limit=1e-9,
+        )
+
+        # --- ④ 派生値計算（互換性用） ---------------------------------
         self.config_data = calculate_derived_constants(self.config_data)
 
         # --- ③ ini 保存 -----------------------------------------------

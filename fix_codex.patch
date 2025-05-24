@@ -1,244 +1,224 @@
-diff --git a/spermsim/main.py b/spermsim/main.py
-index 54def3a..df4e820 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -6,50 +6,51 @@ import sqlite3
- import sys
- import time
- from datetime import datetime
- from enum import Enum
+diff --git a/gui_app.py b/gui_app.py
+index 84b25f5..323ce02 100644
+--- a/gui_app.py
++++ b/gui_app.py
+@@ -1,74 +1,104 @@
+ #!/usr/bin/env python3
+ # -*- coding: utf-8 -*-
+ """
+ Tkinter GUI for Sperm Simulation
+ --------------------------------
+ ・GUI → .ini 保存 → Simulation 実行 → プロット表示（2D / movie）
+ ・派生値計算は core/simulation.py 側で行う（mm 単位）
+ """
  
- # IO 状態を表す列挙型（独自定義または外部ファイルから）
- from io_status import IOStatus
- 
- # --- GUIライブラリ ---
+ import os
  import tkinter as tk
- 
- # --- 外部ライブラリ ---
- import matplotlib
- matplotlib.use("Agg")  # GUI 非依存の描画専用モード
- import matplotlib.pyplot as plt
- from matplotlib.animation import FuncAnimation
- import matplotlib.patches as patches
+ from tkinter import ttk
+ import configparser
  import numpy as np
- import numpy.linalg as LA
- import pandas as pd
- from scipy.spatial.transform import Rotation as R
- from tqdm import tqdm
++import math
  
- # --- 派生変数一元計算モジュールをインポート ---
+ from core.simulation import SpermSimulation       # ← ここで派生変数計算を呼ぶ
+ from tools.plot_utils import plot_2d_trajectories, plot_3d_trajectories
  from tools.derived_constants import calculate_derived_constants
-+from core.simulation import SpermSimulation as CoreSpermSimulation
  
- # --- ジオメトリ関連クラス/ファクトリ ---
- from .geometry import create_shape  # 必要ならself-import等は調整
+ # ---------------------------------------------------------------------------
+ # .ini ファイルのパス
+ # ---------------------------------------------------------------------------
+ CONFIG_PATH = os.path.join(os.path.dirname(__file__), "sperm_config.ini")
  
- # --- データ・画像・動画保存パス等 ---
- try:
-     _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
- except NameError:
-     _SCRIPT_DIR = os.getcwd()
+ # 保存時のキー順（GUI 表示順と合わせる）
+ PARAM_ORDER = [
+     "shape", "spot_angle", "vol", "sperm_conc", "vsl", "deviation",
+     "surface_time", "egg_localization", "gamete_r", "sim_min",
+     "sampl_rate_hz", "seed_number", "sim_repeat", "display_mode",
+ ]
  
- DATA_DIR  = os.path.join(_SCRIPT_DIR, "data")
- IMG_DIR   = os.path.join(DATA_DIR, "graphs")
- MOV_DIR   = os.path.join(DATA_DIR, "movies")
- os.makedirs(IMG_DIR, exist_ok=True)
- os.makedirs(MOV_DIR, exist_ok=True)
- DB_PATH_DEFAULT = os.path.join(DATA_DIR, "Trajectory.db")
+ # デフォルト設定
+ default_values = {
+     "shape": "cube",
+     "spot_angle": 50.0,
+     "vol": 6.25,               # µL
+     "sperm_conc": 10_000.0,    # cells/mL
+     "vsl": 0.13,               # mm/s
+     "deviation": 0.4,
+     "surface_time": 2.0,
+     "egg_localization": "bottom_center",
+     "gamete_r": 0.04,          # mm  (GUI 表示は µm)
+     "sim_min": 1.0,            # min 実測値ではなく「分」→秒に変換は simulation 側
+     "sampl_rate_hz": 4.0,
+     "seed_number": "None",
+     "sim_repeat": 1,
+     "display_mode": ["2D"],    # 文字列リスト
+ }
  
- def _safe_anim_save(anim, output_path):
-     """
-     ffmpegが無くてもPillowWriterで保存を試みる安全ラッパー
-     """
-     try:
-         anim.save(output_path, writer="ffmpeg", codec="mpeg4", fps=5)
-     except Exception as e:
-         print(f"[WARN] ffmpeg保存失敗 ({e}) → pillow writerで再試行")
-diff --git a/spermsim/main.py b/spermsim/main.py
-index 54def3a..df4e820 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -1467,174 +1468,69 @@ class SpermPlot:
-         self.constants  = self.simulation.constants
-         self.colors     = self.simulation.vec_colors
- 
-         keys = ['x_min', 'x_max', 'y_min', 'y_max', 'z_min', 'z_max']
-         missing = [k for k in keys if self.constants.get(k) is None]
-         if missing:
-             raise RuntimeError(
-                 f"constantsに範囲値未セット: {missing} → tools/derived_constants.pyを修正"
-             )
-         # 一括代入
-         (self.x_min, self.x_max,
-          self.y_min, self.y_max,
-          self.z_min, self.z_max) = (self.constants[k] for k in keys)
- 
-     def set_ax_3D(self, ax):
-         ax.set_xlim(self.x_min, self.x_max)
-         ax.set_ylim(self.y_min, self.y_max)
-         ax.set_zlim(self.z_min, self.z_max)
-         ax.set_box_aspect([
-             self.x_max - self.x_min,
-             self.y_max - self.y_min,
-             self.z_max - self.z_min
-         ])
- 
-     def _draw_graph(self, shape):
--        print("@@@ draw_graph called")
--        plt.close('all')
-+        """Save 2D trajectory graph using core.plot_trajectories"""
-+        plt.close("all")
-         plt.rcdefaults()
-         if hasattr(self, "already_saved") and self.already_saved:
-             return None
- 
--        # サブプロットの構成
--        if shape == "ceros":
--            fig, ax_single = plt.subplots(figsize=(4, 4), dpi=300)
--            axes = [ax_single]
--            axis_combi = [('X', 'Y', 0)]
--        else:
--            fig, axes = plt.subplots(1, 3, figsize=(12, 4), dpi=300)
--            axis_combi = [('X', 'Y', 0), ('X', 'Z', 1), ('Y', 'Z', 2)]
--
--        index_map = {'X': 0, 'Y': 1, 'Z': 2}
--
--        # 卵子の可視化
--        if shape != "ceros":
--            egg_constants = self.constants.copy()
--            egg_x, egg_y, egg_z, *_ , egg_center, _ = placement_of_eggs(egg_constants)
--
--            # ② 確認用の print 文
--            print("===== 卵子描画前のパラメータ確認 =====")
--            print("@@@gamete_r:", self.constants.get("gamete_r"))
--            print("@@@z_min   :", self.constants.get("z_min"))
--            print("@@@egg_z   :", egg_z)
--            print(
--                "@@@描画位置: (egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z) =",
--                (egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)
--            )
--            print("=====================================")
--
--            # 背景領域を先に描画することで卵子を上に重ねる
--            self.draw_motion_area(shape, axes, self.constants)
--
--            for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
--                ax.add_patch(
--                    patches.Circle(
--                        (x, y),
--                        radius=self.constants['gamete_r'],
--                        facecolor='yellow',
--                        alpha=0.8,
--                        ec='gray',
--                        linewidth=1.0,
--                        zorder=3,
--                    )
--                )
--
--        # 軌跡描画
--        pbar = tqdm(
--            total=self.simulation.number_of_sperm * (self.simulation.number_of_steps - 1) * len(axis_combi),
--            desc="Plotting trajectories", ncols=100, ascii=True
--        )
--        for j in range(self.simulation.number_of_sperm):
--            for i in range(self.simulation.number_of_steps - 1):
--                for axis1, axis2, idx in axis_combi:
--                    axes[idx].plot(
--                        self.simulation.trajectory[j, i:i+2, index_map[axis1]],
--                        self.simulation.trajectory[j, i:i+2, index_map[axis2]],
--                        color=self.simulation.vec_colors[j, i],
--                        linewidth=self.simulation.vec_thickness_2d[j, i]
--                    )
--                    pbar.update(1)
--        pbar.close()
--
--        # --- 描画範囲・アスペクト比をconstantsから統一設定 ---
--        if shape == "ceros":
--            ax_single.set_xlim(self.constants['x_min'], self.constants['x_max'])
--            ax_single.set_ylim(self.constants['y_min'], self.constants['y_max'])
--            ax_single.set_aspect('equal', adjustable='box')
--        else:
--            for idx, ax in enumerate(axes):
--                # 軸ごとに範囲をセット
--                if idx == 0:  # X-Y
--                    ax.set_xlim(self.constants['x_min'], self.constants['x_max'])
--                    ax.set_ylim(self.constants['y_min'], self.constants['y_max'])
--                elif idx == 1:  # X-Z
--                    ax.set_xlim(self.constants['x_min'], self.constants['x_max'])
--                    ax.set_ylim(self.constants['z_min'], self.constants['z_max'])
--                elif idx == 2:  # Y-Z
--                    ax.set_xlim(self.constants['y_min'], self.constants['y_max'])
--                    ax.set_ylim(self.constants['z_min'], self.constants['z_max'])
--                ax.set_aspect('equal', adjustable='box')
--                ax.set_anchor('C')
--
--        # --- 軸ラベル ---
--        for axis1, axis2, idx in axis_combi:
--            axes[idx].set_xlabel(f"{axis1}")
--            axes[idx].set_ylabel(f"{axis2}")
--
--        # --- タイトル ---
--        if shape in ("cube", "drop", "spot"):
--            merged_events = self.simulation.merge_contact_events()
--            contacts_per_hour = len(merged_events) / (self.constants['sim_min'] / 60)
--            title_str = (
--                f"vol: {self.constants['volume']} μl, "
--                f"conc: {self.constants['sperm_conc']}/ml, "
--                f"vsl: {self.constants['vsl']} mm, "
--                f"sampling: {self.constants['sampl_rate_hz']} Hz,\n"
--                f"dev: {self.constants['deviation']}, "
--                f"stick: {self.constants['stick_sec']} sec,\n"
--                f"sperm/egg interaction: {len(merged_events)} during {self.constants['sim_min']} min, "
--                f"egg: {self.constants['egg_localization']}, "
--            )
--            if shape == "spot":
--                title_str += (
--                    f"spot_angle: {self.constants.get('spot_angle', 'N/A')} degree"
--                )
--            fig.suptitle(title_str, fontsize=8, y=0.98)
--        n_title_lines  = fig._suptitle.get_text().count("\n") + 1
--        top_margin     = max(0.92 - 0.03 * (n_title_lines - 1), 0.80)
--        fig.tight_layout(rect=[0.00, 0.00, 1.00, top_margin])
--
--        # --- 保存処理 ---
-         out_dir = IMG_DIR
-         os.makedirs(out_dir, exist_ok=True)
-         ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-         fname = f"graph_output_{ts}.svg"
-         out_path = os.path.join(out_dir, fname)
--        plt.savefig(out_path, format='svg', dpi=300, bbox_inches='tight')
--        print(out_path)
++# ---------------------------------------------------------------------------
++# geometry helpers
++# ---------------------------------------------------------------------------
++def _calc_spot_geometry(volume_ul: float, angle_deg: float) -> tuple[float, float, float]:
++    """Return (spot_r_mm, bottom_r_mm, bottom_height_mm) from volume and angle."""
++    angle_rad = math.radians(angle_deg)
++    vol_um3 = volume_ul * 1e9
 +
-+        CoreSpermSimulation.plot_trajectories(
-+            self.simulation,
-+            max_sperm=self.simulation.number_of_sperm,
-+            save_path=out_path,
++    def cap_volume(R: float) -> float:
++        h = R * (1 - math.cos(angle_rad))
++        return math.pi * h * h * (3 * R - h) / 3
++
++    low = 0.0
++    high = max(vol_um3 ** (1 / 3), 1.0)
++    while cap_volume(high) < vol_um3:
++        high *= 2.0
++
++    for _ in range(60):
++        mid = (low + high) / 2.0
++        if cap_volume(mid) < vol_um3:
++            low = mid
++        else:
++            high = mid
++
++    R_um = (low + high) / 2.0
++    bottom_r_um = R_um * math.sin(angle_rad)
++    bottom_height_um = -R_um * math.cos(angle_rad)
++    return R_um / 1000.0, bottom_r_um / 1000.0, bottom_height_um / 1000.0
++
+ # ---------------------------------------------------------------------------
+ # .ini 読み書きユーティリティ
+ # ---------------------------------------------------------------------------
+ def save_config(values: dict) -> None:
+     cfg = configparser.ConfigParser()
+     ordered = {}
+     for k in PARAM_ORDER:
+         if k not in values:
+             continue
+         v = values[k]
+         if k == "display_mode":
+             ordered[k] = ",".join(v) if isinstance(v, list) else str(v)
+         else:
+             ordered[k] = str(v)
+     # 保存対象外のキーもまとめて保存
+     for k in sorted(values.keys()):
+         if k in ordered or k in PARAM_ORDER:
+             continue
+         ordered[k] = str(values[k])
+     cfg["simulation"] = ordered
+     with open(CONFIG_PATH, "w") as f:
+         cfg.write(f)
+ 
+ 
+ def load_config() -> dict:
+diff --git a/gui_app.py b/gui_app.py
+index 84b25f5..323ce02 100644
+--- a/gui_app.py
++++ b/gui_app.py
+@@ -273,58 +303,104 @@ class SimApp(tk.Tk):
+         1. GUI の Tk 変数 → self.config_data へ安全にコピー
+            （vsl は mm/s、gamete_r は mm）
+         2. .ini に保存
+         3. シミュレーションを実行
+         """
+         # --- ① Tk → config_data（vsl, gamete_r は mm で保持） -----
+         for k, var in self.tk_vars.items():
+             try:
+                 if isinstance(var, (tk.DoubleVar, tk.IntVar)):
+                     val = float(var.get()) if isinstance(var, tk.DoubleVar) else int(var.get())
+                     if k == "vsl":
+                         val /= 1000.0  # µm/s → mm/s
+                     elif k == "gamete_r":
+                         val /= 1000.0  # µm  → mm
+                     self.config_data[k] = val
+                 else:
+                     self.config_data[k] = var.get()
+             except Exception:
+                 self.config_data[k] = var.get()
+ 
+         # display_mode（ラジオボタン）
+         mode = self.tk_vars["display_mode"].get()
+         modes = [mode] if mode else []
+         self.config_data["display_mode"] = modes
+ 
+-        # --- drop_r 計算 -----------------------------------------------
++        # --- ② shape specific parameters -------------------------------
+         shape = str(self.config_data.get("shape", "")).lower()
+-        if shape == "drop":
+-            vol_ul = float(self.config_data.get("vol", 0.0))
+-            r_um = ((3 * vol_ul * 1e9) / (4 * np.pi)) ** (1.0 / 3.0)
+-            self.config_data["drop_r"] = r_um
++        vol_ul = float(self.config_data.get("vol", 0.0))
++
++        if shape == "cube":
++            edge = vol_ul ** (1 / 3)
++            half = edge / 2
++            self.config_data.update(
++                edge=edge,
++                x_min=-half, x_max=half,
++                y_min=-half, y_max=half,
++                z_min=-half, z_max=half,
++            )
++
++        elif shape == "drop":
++            r = (3 * vol_ul / (4 * math.pi)) ** (1 / 3)
++            self.config_data.update(
++                drop_r=r,
++                radius=r,
++                x_min=-r, x_max=r,
++                y_min=-r, y_max=r,
++                z_min=-r, z_max=r,
++            )
++
++        elif shape == "spot":
++            angle = float(self.config_data.get("spot_angle", 0.0))
++            spot_r, bottom_r, bottom_h = _calc_spot_geometry(vol_ul, angle)
++            self.config_data.update(
++                spot_r=spot_r,
++                spot_bottom_r=bottom_r,
++                spot_bottom_height=bottom_h,
++                radius=spot_r,
++                x_min=-spot_r, x_max=spot_r,
++                y_min=-spot_r, y_max=spot_r,
++                z_min=bottom_h - spot_r,
++                z_max=bottom_h + spot_r,
++            )
++
++        elif shape == "ceros":
++            self.config_data.update(
++                x_min=-8.15, x_max=8.15,
++                y_min=-8.15, y_max=8.15,
++                z_min=-8.15, z_max=8.15,
++            )
++
++        # --- ③ generic parameters ------------------------------------
++        vsl = float(self.config_data.get("vsl", 0.0))
++        hz = float(self.config_data.get("sampl_rate_hz", 1.0))
++        self.config_data.update(
++            step_length=vsl / hz if hz else 0.0,
++            limit=1e-9,
 +        )
-+
-         self.already_saved = True
--        plt.close(fig)
-         return out_path
  
-     #####
-     def draw_motion_area(self, shape, axes, constants):
-         if shape == 'spot':
-             spot_bottom_radius = constants['spot_bottom_r']
-             spot_r = constants['spot_r']
-             spot_bottom_height = constants['spot_bottom_height']
-             axes[0].add_patch(patches.Circle((0, 0), spot_bottom_radius, ec='none', facecolor='red', alpha=0.1))
-             for ax in axes[1:]:
-                 ax.add_patch(patches.Circle((0, 0), spot_r, ec='none', facecolor='red', alpha=0.1))
-                 ax.axhline(spot_bottom_height, color='gray', linestyle='--', linewidth=0.8)
-         elif shape == 'drop':
-             drop_r = constants['drop_r']
-             for ax in axes:
-                 ax.add_patch(patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1))
-         elif shape == 'cube':
-             pass
+-        # --- ② 派生値計算 ---------------------------------------------
++        # --- ④ 派生値計算（互換性用） ---------------------------------
+         self.config_data = calculate_derived_constants(self.config_data)
  
-         if shape == 'spot':
-             spot_bottom_radius = constants['spot_bottom_r']
-             spot_r = constants['spot_r']
-             spot_bottom_height = constants['spot_bottom_height']
-             axes[0].add_patch(patches.Circle((0, 0), spot_bottom_radius, ec='none', facecolor='red', alpha=0.1))
-             for ax in axes[1:]:
+         # --- ③ ini 保存 -----------------------------------------------
+         save_config(self.config_data)
+         # --- ④ シミュレーション実行 --------------------------------------
+         sim = SpermSimulation(self.config_data)
+         sim.run(self.config_data["sim_repeat"])
+ 
+         # --- ⑤ 描画 -----------------------------------------------------
+         if "2D" in modes:
+             plot_2d_trajectories(np.array(sim.trajectory), self.config_data)
+         elif "3D" in modes:
+             plot_3d_trajectories(np.array(sim.trajectory), self.config_data)
+         elif "movie" in modes:
+             sim.plot_movie_trajectories()   # 実装に合わせて
+ 
+ 
+     # ---------------------------------------------------------------------
+     # 起動時に .ini から各 Tk 変数を復元
+     # ---------------------------------------------------------------------
+     def _restore_from_config(self) -> None:
+         for k, var in self.tk_vars.items():
+             if k not in self.config_data:
+                 continue
+             v = self.config_data[k]
