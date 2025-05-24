@@ -1619,7 +1619,7 @@ class SpermPlot:
                 ax.add_patch(patches.Circle((0, 0), spot_r, ec='none', facecolor='red', alpha=0.1))
                 ax.axhline(spot_bottom_height, color='gray', linestyle='--', linewidth=0.8)
         elif shape == 'drop':
-            drop_r = constants.get('drop_r', constants['radius'])
+            drop_r = constants['drop_r']
             for ax in axes:
                 ax.add_patch(patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1))
         elif shape == 'cube':
@@ -1634,7 +1634,7 @@ class SpermPlot:
                 ax.add_patch(patches.Circle((0, 0), spot_r, ec='none', facecolor='red', alpha=0.1))
                 ax.axhline(spot_bottom_height, color='gray', linestyle='--', linewidth=0.8)
         elif shape == 'drop':
-            drop_r = constants.get('drop_r', constants['radius'])
+            drop_r = constants['drop_r']
             for ax in axes:
                 ax.add_patch(patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1))
         elif shape == 'cube':
@@ -1753,7 +1753,7 @@ class SpermTrajectoryVisualizer:
                 sz = spot_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
                 ax.plot_surface(sx, sy, sz, color='red', alpha=0.15)
             elif shape == "drop":
-                drop_r = self.constants.get('drop_r', 5)
+                drop_r = self.constants['drop_r']
                 shape_u = np.linspace(0, 2*np.pi, 60)
                 shape_v = np.linspace(0, np.pi, 60)
                 sx = drop_r * np.outer(np.sin(shape_v), np.cos(shape_u))

@@ -37,7 +37,7 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
 
     elif shape == "drop":
         r_mm   = float(constants.get("drop_r", 0.0)) / 1_000.0
-        spatial = dict(radius=r_mm,
+        spatial = dict(drop_r=r_mm, radius=r_mm,
                        x_min=-r_mm, x_max=r_mm,
                        y_min=-r_mm, y_max=r_mm,
                        z_min=-r_mm, z_max=r_mm)

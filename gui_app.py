@@ -295,6 +295,13 @@ class SimApp(tk.Tk):
         modes = [mode] if mode else []
         self.config_data["display_mode"] = modes
 
+        # --- drop_r 計算 -----------------------------------------------
+        shape = str(self.config_data.get("shape", "")).lower()
+        if shape == "drop":
+            vol_ul = float(self.config_data.get("vol", 0.0))
+            r_um = ((3 * vol_ul * 1e9) / (4 * np.pi)) ** (1.0 / 3.0)
+            self.config_data["drop_r"] = r_um
+
         # --- ② 派生値計算 ---------------------------------------------
         self.config_data = calculate_derived_constants(self.config_data)
 

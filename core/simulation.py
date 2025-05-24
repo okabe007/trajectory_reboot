@@ -32,7 +32,7 @@ def _egg_position(constants):
             ),
         }
     elif shape == "drop":
-        drop_r = constants.get("drop_r", constants.get("radius", 0))
+        drop_r = constants["drop_r"]
         positions = {
             "center": (0, 0, 0),
             "bottom_center": (0, 0, -drop_r + r),
