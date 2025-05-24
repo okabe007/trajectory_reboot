@@ -10,11 +10,13 @@ def _make_save_path(prefix="trajectory", ext="png", dir="Figs_and_Movies"):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"{dir}/{prefix}_{timestamp}.{ext}"
 
-def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel):
+def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel, equal=False):
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
+    if equal:
+        ax.set_aspect('equal', adjustable='box')
 
 def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=None):
     x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
@@ -30,7 +32,8 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
     drop_r = float(constants.get('drop_r', 0.0))
 
     for ax, xlim, ylim, xlabel, ylabel, title in axis_configs:
-        _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel)
+        equal = shape == 'drop'
+        _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel, equal)
         ax.set_title(title)
         if shape == 'drop' and drop_r > 0:
             ax.add_patch(
