@@ -15,7 +15,9 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
     vol     = float(constants.get("vol", 1.0))            # µL
     vsl     = float(constants.get("vsl", 0.0))            # mm/s
     hz      = float(constants.get("sampl_rate_hz", 1.0))  # Hz
-    gamete_r = float(constants.get("gamete_r", 0.0)) 
+    # gamete_r は設定ファイルに保存されている値（mm）をそのまま使用する
+    # 旧設定では µm 単位の値も存在したが、グラフ描画では保存値を直接使う
+    gamete_r = float(constants.get("gamete_r", 0.0))
 
     # ---------- 形状ごとの空間パラメータ（mm） --------------------------
     if shape == "cube":
@@ -27,8 +29,15 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
                        z_min=-h, z_max= h)
 
     elif shape == "spot":
-        spot_r_mm      = float(constants.get("spot_r", 0.0)) / 1_000.0
-        spot_bottom_mm = float(constants.get("spot_bottom_height", 0.0)) / 1_000.0
+        # spot_r / spot_bottom_height may already be in mm depending on the
+        # caller.  If the value looks like it is given in micrometers
+        # (typically O(100)), convert it to mm; otherwise use it as is.
+        spot_r_raw = float(constants.get("spot_r", 0.0))
+        spot_bottom_raw = float(constants.get("spot_bottom_height", 0.0))
+        spot_r_mm = spot_r_raw / 1_000.0 if spot_r_raw > 10 else spot_r_raw
+        spot_bottom_mm = (
+            spot_bottom_raw / 1_000.0 if spot_bottom_raw > 10 else spot_bottom_raw
+        )
         spatial = dict(spot_r=spot_r_mm,
                        x_min=-spot_r_mm, x_max= spot_r_mm,
                        y_min=-spot_r_mm, y_max= spot_r_mm,
@@ -36,7 +45,10 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
                        z_max= spot_bottom_mm + spot_r_mm)
 
     elif shape == "drop":
-        r_mm   = float(constants.get("drop_r", 0.0)) / 1_000.0
+        # drop_r may be provided either in micrometers or millimeters.
+        # Values greater than ~10 are interpreted as micrometers.
+        r_raw = float(constants.get("drop_r", 0.0))
+        r_mm = r_raw / 1_000.0 if r_raw > 10 else r_raw
         spatial = dict(drop_r=r_mm, radius=r_mm,
                        x_min=-r_mm, x_max=r_mm,
                        y_min=-r_mm, y_max=r_mm,
@@ -53,7 +65,8 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
 
     spatial.update(vsl=vsl,
                    step_length=vsl / hz if hz else 0.0,
-                   limit=1e-9)
+                   limit=1e-9,
+                   gamete_r=gamete_r)
 
 
 
