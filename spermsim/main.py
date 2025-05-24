@@ -1510,26 +1510,33 @@ class SpermPlot:
         if shape != "ceros":
             egg_constants = self.constants.copy()
             egg_x, egg_y, egg_z, *_ , egg_center, _ = placement_of_eggs(egg_constants)
-            
+
             # ② 確認用の print 文
             print("===== 卵子描画前のパラメータ確認 =====")
             print("@@@gamete_r:", self.constants.get("gamete_r"))
             print("@@@z_min   :", self.constants.get("z_min"))
             print("@@@egg_z   :", egg_z)
-            print("@@@描画位置: (egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z) =",
-                (egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z))
+            print(
+                "@@@描画位置: (egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z) =",
+                (egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)
+            )
             print("=====================================")
 
-            
+            # 背景領域を先に描画することで卵子を上に重ねる
+            self.draw_motion_area(shape, axes, self.constants)
+
             for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
                 ax.add_patch(
                     patches.Circle(
                         (x, y),
                         radius=self.constants['gamete_r'],
-                        facecolor='yellow', alpha=0.8, ec='gray', linewidth=1.0
+                        facecolor='yellow',
+                        alpha=0.8,
+                        ec='gray',
+                        linewidth=1.0,
+                        zorder=3,
                     )
                 )
-            self.draw_motion_area(shape, axes, self.constants)
 
         # 軌跡描画
         pbar = tqdm(
