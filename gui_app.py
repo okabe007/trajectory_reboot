@@ -313,9 +313,9 @@ class SimApp(tk.Tk):
 
         # --- ⑤ 描画 -----------------------------------------------------
         if "2D" in modes:
-            sim.plot_trajectories()
+            plot_2d_trajectories(np.array(sim.trajectory), self.config_data)
         elif "3D" in modes:
-            plot_3d_trajectories(np.array(sim.trajectory), sim.constants)
+            plot_3d_trajectories(np.array(sim.trajectory), self.config_data)
         elif "movie" in modes:
             sim.plot_movie_trajectories()   # 実装に合わせて
 

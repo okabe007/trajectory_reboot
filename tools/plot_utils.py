@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from datetime import datetime
+from matplotlib import patches
 from tools.derived_constants import get_limits  # スマートなimport
 
 def _make_save_path(prefix="trajectory", ext="png", dir="Figs_and_Movies"):
@@ -25,9 +26,16 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
         (axs[2], (y_min, y_max), (z_min, z_max), "Y", "Z", "YZ-projection"),
     ]
 
+    shape = str(constants.get('shape', '')).lower()
+    drop_r = float(constants.get('drop_r', 0.0))
+
     for ax, xlim, ylim, xlabel, ylabel, title in axis_configs:
         _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel)
         ax.set_title(title)
+        if shape == 'drop' and drop_r > 0:
+            ax.add_patch(
+                patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1)
+            )
 
     n_sperm = min(trajs.shape[0], max_sperm or trajs.shape[0])
     for s in range(n_sperm):
@@ -57,6 +65,16 @@ def plot_3d_trajectories(traj: np.ndarray, constants: dict, max_sperm: int = 5, 
     ax = fig.add_subplot(111, projection='3d')
     for s in range(n_sperm):
         ax.plot(traj[s, :, 0], traj[s, :, 1], traj[s, :, 2], label=f"Sperm {s}" if n_sperm <= 5 else None)
+
+    shape = str(constants.get('shape', '')).lower()
+    drop_r = float(constants.get('drop_r', 0.0))
+    if shape == 'drop' and drop_r > 0:
+        u = np.linspace(0, 2*np.pi, 60)
+        v = np.linspace(0, np.pi, 60)
+        sx = drop_r * np.outer(np.sin(v), np.cos(u))
+        sy = drop_r * np.outer(np.sin(v), np.sin(u))
+        sz = drop_r * np.outer(np.cos(v), np.ones_like(u))
+        ax.plot_surface(sx, sy, sz, color='red', alpha=0.1)
 
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
