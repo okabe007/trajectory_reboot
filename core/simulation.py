@@ -1,12 +1,66 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import patches
 from datetime import datetime
 import math
 import os
 from tools.plot_utils import plot_2d_trajectories
 from core.geometry import CubeShape, DropShape, SpotShape, CerosShape
 from tools.derived_constants import calculate_derived_constants
+
+
+def _egg_position(constants):
+    """Return (egg_x, egg_y, egg_z) according to shape and localization."""
+    shape = constants.get("shape", "cube").lower()
+    loc = constants.get("egg_localization", "center")
+    r = constants.get("gamete_r", 0)
+
+    if shape == "cube":
+        positions = {
+            "center": (0, 0, 0),
+            "bottom_center": (0, 0, constants["z_min"] + r),
+            "bottom_side": (
+                constants["x_min"] / 2 + r,
+                constants["y_min"] / 2 + r,
+                constants["z_min"] + r,
+            ),
+            "bottom_corner": (
+                constants["x_min"] + r,
+                constants["y_min"] + r,
+                constants["z_min"] + r,
+            ),
+        }
+    elif shape == "drop":
+        drop_r = constants["drop_r"]
+        positions = {
+            "center": (0, 0, 0),
+            "bottom_center": (0, 0, -drop_r + r),
+        }
+    elif shape == "spot":
+        spot_r = constants.get("spot_r", 0)
+        spot_bottom_height = constants.get("spot_bottom_height", 0)
+        positions = {
+            "center": (0, 0, (spot_bottom_height + spot_r) / 2),
+            "bottom_center": (0, 0, spot_bottom_height + r),
+            "bottom_edge": (
+                math.sqrt(max((spot_r - r) ** 2 - (spot_bottom_height + r) ** 2, 0)),
+                0,
+                spot_bottom_height + r,
+            ),
+        }
+    elif shape == "ceros":
+        cx = (constants["x_min"] + constants["x_max"]) / 2
+        cy = (constants["y_min"] + constants["y_max"]) / 2
+        cz = (constants["z_min"] + constants["z_max"]) / 2
+        positions = {"center": (cx, cy, cz), "bottom_center": (cx, cy, cz), "bottom_edge": (cx, cy, cz)}
+    else:
+        raise RuntimeError(f"Unknown shape '{shape}'")
+
+    if loc not in positions:
+        raise RuntimeError(f"Invalid egg_localization '{loc}' for shape '{shape}'")
+
+    return positions[loc]
 
 
 class SpermSimulation:
@@ -139,6 +193,21 @@ class SpermSimulation:
         ax_xy, ax_xz, ax_yz = axes
         colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
         n_sperm = min(len(trajectories), max_sperm)
+
+        # --- draw egg position ---
+        if constants.get("shape", "cube").lower() != "ceros":
+            egg_x, egg_y, egg_z = _egg_position(constants)
+            for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
+                ax.add_patch(
+                    patches.Circle(
+                        (x, y),
+                        radius=constants.get("gamete_r", 0),
+                        facecolor="yellow",
+                        alpha=0.8,
+                        ec="gray",
+                        linewidth=1.0,
+                    )
+                )
 
         # XY投影
         for i in range(n_sperm):

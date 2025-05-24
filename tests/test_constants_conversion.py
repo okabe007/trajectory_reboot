@@ -16,3 +16,9 @@ def test_gamete_r_conversion():
     }
     result = calculate_derived_constants(constants)
     assert math.isclose(result["gamete_r"], 0.04, rel_tol=1e-12)
+
+
+def test_drop_r_conversion():
+    constants = {"shape": "drop", "drop_r": 500}
+    result = calculate_derived_constants(constants)
+    assert math.isclose(result["drop_r"], 0.5, rel_tol=1e-12)

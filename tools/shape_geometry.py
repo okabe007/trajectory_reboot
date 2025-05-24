@@ -9,9 +9,6 @@ def calc_cube_size(volume_um3):
     edge = volume_um3 ** (1/3)
     return {"edge_length": edge}
 
-def calc_drop_size(volume_um3):
-    radius = ((3 * volume_um3) / (4 * np.pi)) ** (1/3)
-    return {"drop_radius": radius}
 
 def spot_volume_eq(R, angle_rad, volume):
     h = R * (1 - np.cos(angle_rad))
