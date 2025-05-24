@@ -28,6 +28,7 @@ from tqdm import tqdm
 
 # --- 派生変数一元計算モジュールをインポート ---
 from tools.derived_constants import calculate_derived_constants
+from core.simulation import SpermSimulation as CoreSpermSimulation
 
 # --- ジオメトリ関連クラス/ファクトリ ---
 from .geometry import create_shape  # 必要ならself-import等は調整
@@ -1489,130 +1490,25 @@ class SpermPlot:
         ])
 
     def _draw_graph(self, shape):
-        print("@@@ draw_graph called")
-        plt.close('all')
+        """Save 2D trajectory graph using core.plot_trajectories"""
+        plt.close("all")
         plt.rcdefaults()
         if hasattr(self, "already_saved") and self.already_saved:
             return None
 
-        # サブプロットの構成
-        if shape == "ceros":
-            fig, ax_single = plt.subplots(figsize=(4, 4), dpi=300)
-            axes = [ax_single]
-            axis_combi = [('X', 'Y', 0)]
-        else:
-            fig, axes = plt.subplots(1, 3, figsize=(12, 4), dpi=300)
-            axis_combi = [('X', 'Y', 0), ('X', 'Z', 1), ('Y', 'Z', 2)]
-
-        index_map = {'X': 0, 'Y': 1, 'Z': 2}
-
-        # 卵子の可視化
-        if shape != "ceros":
-            egg_constants = self.constants.copy()
-            egg_x, egg_y, egg_z, *_ , egg_center, _ = placement_of_eggs(egg_constants)
-
-            # ② 確認用の print 文
-            print("===== 卵子描画前のパラメータ確認 =====")
-            print("@@@gamete_r:", self.constants.get("gamete_r"))
-            print("@@@z_min   :", self.constants.get("z_min"))
-            print("@@@egg_z   :", egg_z)
-            print(
-                "@@@描画位置: (egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z) =",
-                (egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)
-            )
-            print("=====================================")
-
-            # 背景領域を先に描画することで卵子を上に重ねる
-            self.draw_motion_area(shape, axes, self.constants)
-
-            for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
-                ax.add_patch(
-                    patches.Circle(
-                        (x, y),
-                        radius=self.constants['gamete_r'],
-                        facecolor='yellow',
-                        alpha=0.8,
-                        ec='gray',
-                        linewidth=1.0,
-                        zorder=3,
-                    )
-                )
-
-        # 軌跡描画
-        pbar = tqdm(
-            total=self.simulation.number_of_sperm * (self.simulation.number_of_steps - 1) * len(axis_combi),
-            desc="Plotting trajectories", ncols=100, ascii=True
-        )
-        for j in range(self.simulation.number_of_sperm):
-            for i in range(self.simulation.number_of_steps - 1):
-                for axis1, axis2, idx in axis_combi:
-                    axes[idx].plot(
-                        self.simulation.trajectory[j, i:i+2, index_map[axis1]],
-                        self.simulation.trajectory[j, i:i+2, index_map[axis2]],
-                        color=self.simulation.vec_colors[j, i],
-                        linewidth=self.simulation.vec_thickness_2d[j, i]
-                    )
-                    pbar.update(1)
-        pbar.close()
-
-        # --- 描画範囲・アスペクト比をconstantsから統一設定 ---
-        if shape == "ceros":
-            ax_single.set_xlim(self.constants['x_min'], self.constants['x_max'])
-            ax_single.set_ylim(self.constants['y_min'], self.constants['y_max'])
-            ax_single.set_aspect('equal', adjustable='box')
-        else:
-            for idx, ax in enumerate(axes):
-                # 軸ごとに範囲をセット
-                if idx == 0:  # X-Y
-                    ax.set_xlim(self.constants['x_min'], self.constants['x_max'])
-                    ax.set_ylim(self.constants['y_min'], self.constants['y_max'])
-                elif idx == 1:  # X-Z
-                    ax.set_xlim(self.constants['x_min'], self.constants['x_max'])
-                    ax.set_ylim(self.constants['z_min'], self.constants['z_max'])
-                elif idx == 2:  # Y-Z
-                    ax.set_xlim(self.constants['y_min'], self.constants['y_max'])
-                    ax.set_ylim(self.constants['z_min'], self.constants['z_max'])
-                ax.set_aspect('equal', adjustable='box')
-                ax.set_anchor('C')
-
-        # --- 軸ラベル ---
-        for axis1, axis2, idx in axis_combi:
-            axes[idx].set_xlabel(f"{axis1}")
-            axes[idx].set_ylabel(f"{axis2}")
-
-        # --- タイトル ---
-        if shape in ("cube", "drop", "spot"):
-            merged_events = self.simulation.merge_contact_events()
-            contacts_per_hour = len(merged_events) / (self.constants['sim_min'] / 60)
-            title_str = (
-                f"vol: {self.constants['volume']} μl, "
-                f"conc: {self.constants['sperm_conc']}/ml, "
-                f"vsl: {self.constants['vsl']} mm, "
-                f"sampling: {self.constants['sampl_rate_hz']} Hz,\n"
-                f"dev: {self.constants['deviation']}, "
-                f"stick: {self.constants['stick_sec']} sec,\n"
-                f"sperm/egg interaction: {len(merged_events)} during {self.constants['sim_min']} min, "
-                f"egg: {self.constants['egg_localization']}, "
-            )
-            if shape == "spot":
-                title_str += (
-                    f"spot_angle: {self.constants.get('spot_angle', 'N/A')} degree"
-                )
-            fig.suptitle(title_str, fontsize=8, y=0.98)
-        n_title_lines  = fig._suptitle.get_text().count("\n") + 1
-        top_margin     = max(0.92 - 0.03 * (n_title_lines - 1), 0.80)
-        fig.tight_layout(rect=[0.00, 0.00, 1.00, top_margin])
-
-        # --- 保存処理 ---
         out_dir = IMG_DIR
         os.makedirs(out_dir, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         fname = f"graph_output_{ts}.svg"
         out_path = os.path.join(out_dir, fname)
-        plt.savefig(out_path, format='svg', dpi=300, bbox_inches='tight')
-        print(out_path)
+
+        CoreSpermSimulation.plot_trajectories(
+            self.simulation,
+            max_sperm=self.simulation.number_of_sperm,
+            save_path=out_path,
+        )
+
         self.already_saved = True
-        plt.close(fig)
         return out_path
 
     #####
