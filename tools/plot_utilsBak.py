@@ -21,7 +21,7 @@ def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel, equal=False):
 def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=None):
     x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
 
-    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+    fig, axs = plt.subplots(1, 3, figsize=(10, 4))
 
     shape = str(constants.get('shape', '')).lower()
     drop_r = float(constants.get('drop_r', 0.0))
@@ -120,7 +120,7 @@ def plot_3d_trajectories(traj: np.ndarray, constants: dict, max_sperm: int = 5, 
 
     n_sperm = min(traj.shape[0], max_sperm)
 
-    fig = plt.figure(figsize=(6, 6))
+    fig = plt.figure(figsize=(10, 4))
     ax = fig.add_subplot(111, projection='3d')
     for s in range(n_sperm):
         ax.plot(traj[s, :, 0], traj[s, :, 1], traj[s, :, 2], label=f"Sperm {s}" if n_sperm <= 5 else None)

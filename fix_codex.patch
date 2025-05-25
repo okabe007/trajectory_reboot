@@ -1,7 +1,7 @@
-diff --git a/tools/plot_utils.py b/tools/plot_utils.py
-index 3cbd96a..21b1825 100644
---- a/tools/plot_utils.py
-+++ b/tools/plot_utils.py
+diff --git a/tools/plot_utilsBak.py b/tools/plot_utilsBak.py
+index acbaf7d..a028b76 100644
+--- a/tools/plot_utilsBak.py
++++ b/tools/plot_utilsBak.py
 @@ -1,49 +1,49 @@
  import matplotlib.pyplot as plt
  import numpy as np
@@ -48,8 +48,65 @@ index 3cbd96a..21b1825 100644
              (axs[2], (y_min, y_max), (z_min, z_max), "Y", "Z", "YZ-projection"),
          ]
  
+ 
      for ax, xlim, ylim, xlabel, ylabel, title in axis_configs:
-         equal = shape in ('drop', 'cube', 'spot')
-         _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel, equal)
-         ax.set_title(title)
-         if shape == 'drop' and drop_r > 0:
+ <<<<<<< ours
+ <<<<<<< ours
+         equal = shape in ('drop', 'cube')
+diff --git a/tools/plot_utilsBak.py b/tools/plot_utilsBak.py
+index acbaf7d..a028b76 100644
+--- a/tools/plot_utilsBak.py
++++ b/tools/plot_utilsBak.py
+@@ -98,51 +98,51 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
+         f"sim_min={constants.get('sim_min')}, sim_repeat={constants.get('sim_repeat')}",
+         fontsize=10
+     )
+     plt.tight_layout(rect=[0, 0, 1, 0.95])
+     if not save_path:
+         save_path = _make_save_path("trajectory_2d", "png")
+     plt.savefig(save_path, dpi=150)
+     print(f"[INFO] 2D図を保存しました: {save_path}")
+     if show:
+         plt.show()
+ 
+ def plot_3d_trajectories(traj: np.ndarray, constants: dict, max_sperm: int = 5, show=True):
+     shape = str(constants.get('shape', '')).lower()
+ 
+     x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
+     if shape == 'spot':
+         spot_r = float(constants.get('spot_r', 0.0))
+         spot_bottom_height = float(constants.get('spot_bottom_height', 0.0))
+         if spot_r > 0:
+             x_min, x_max = -spot_r, spot_r
+             y_min, y_max = -spot_r, spot_r
+             z_min, z_max = spot_bottom_height, spot_r
+ 
+     n_sperm = min(traj.shape[0], max_sperm)
+ 
+-    fig = plt.figure(figsize=(6, 6))
++    fig = plt.figure(figsize=(10, 4))
+     ax = fig.add_subplot(111, projection='3d')
+     for s in range(n_sperm):
+         ax.plot(traj[s, :, 0], traj[s, :, 1], traj[s, :, 2], label=f"Sperm {s}" if n_sperm <= 5 else None)
+ 
+     drop_r = float(constants.get('drop_r', 0.0))
+     if shape == 'drop' and drop_r > 0:
+         u = np.linspace(0, 2*np.pi, 60)
+         v = np.linspace(0, np.pi, 60)
+         sx = drop_r * np.outer(np.sin(v), np.cos(u))
+         sy = drop_r * np.outer(np.sin(v), np.sin(u))
+         sz = drop_r * np.outer(np.cos(v), np.ones_like(u))
+         ax.plot_surface(sx, sy, sz, color='red', alpha=0.1)
+     elif shape == 'cube':
+         xs = [x_min, x_max]
+         ys = [y_min, y_max]
+         zs = [z_min, z_max]
+         # 6 faces of the cube
+         for z in zs:
+             X, Y = np.meshgrid(xs, ys)
+             Z = np.full_like(X, z)
+             ax.plot_surface(X, Y, Z, color='red', alpha=0.1)
+         for x in xs:
+             Y, Z = np.meshgrid(ys, zs)
+             X = np.full_like(Y, x)
+             ax.plot_surface(X, Y, Z, color='red', alpha=0.1)
