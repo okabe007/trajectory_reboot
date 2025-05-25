@@ -1,8 +1,8 @@
 diff --git a/core/simulation.py b/core/simulation.py
-index efff94e..2e945e5 100644
+index 2e945e5..7475072 100644
 --- a/core/simulation.py
 +++ b/core/simulation.py
-@@ -80,50 +80,68 @@ def _egg_position(constants):
+@@ -80,66 +80,111 @@ def _egg_position(constants):
          cy = (constants["y_min"] + constants["y_max"]) / 2
          cz = (constants["z_min"] + constants["z_max"]) / 2
          positions = {"center": (cx, cy, cz), "bottom_center": (cx, cy, cz), "bottom_edge": (cx, cy, cz)}
@@ -28,24 +28,81 @@ index efff94e..2e945e5 100644
          return "border"
  
  
-+def _io_check_spot(position: np.ndarray, constants: dict) -> str:
-+    """Return 'inside', 'outside', or 'bottom' for spot shape."""
-+    r = constants.get("spot_r", 0.0)
-+    bottom_z = constants.get("spot_bottom_height", 0.0)
-+    bottom_r = constants.get("spot_bottom_r", 0.0)
-+    limit = constants.get("limit", 1e-9)
+-def _io_check_spot(position: np.ndarray, constants: dict) -> str:
+-    """Return 'inside', 'outside', or 'bottom' for spot shape."""
+-    r = constants.get("spot_r", 0.0)
++class SpotIO:
++    """Status constants for spot geometry."""
 +
-+    if position[2] < bottom_z - limit:
-+        # below the bottom plane
-+        if np.linalg.norm(position[:2]) <= bottom_r + limit:
-+            return "bottom"
-+        # fall through to outside check on sphere
-+
-+    if np.linalg.norm(position) > r + limit:
-+        return "outside"
-+    return "inside"
++    INSIDE = "inside"
++    BORDER = "border"
++    SPHERE_OUT = "sphere_out"
++    BOTTOM_OUT = "bottom_out"
++    SPOT_EDGE_OUT = "spot_edge_out"
++    POLYGON_MODE = "polygon_mode"
++    SPOT_BOTTOM = "spot_bottom"
 +
 +
++def _io_check_spot(
++    base_position: np.ndarray,
++    temp_position: np.ndarray,
++    constants: dict,
++    prev_stat: str = "inside",
++    stick_status: int = 0,
++) -> str:
++    """Return detailed IO status for spot shape."""
++
++    radius = constants.get("spot_r", constants.get("radius", 0.0))
+     bottom_z = constants.get("spot_bottom_height", 0.0)
+     bottom_r = constants.get("spot_bottom_r", 0.0)
+     limit = constants.get("limit", 1e-9)
+ 
+-    if position[2] < bottom_z - limit:
+-        # below the bottom plane
+-        if np.linalg.norm(position[:2]) <= bottom_r + limit:
+-            return "bottom"
+-        # fall through to outside check on sphere
+-
+-    if np.linalg.norm(position) > r + limit:
+-        return "outside"
+-    return "inside"
++    z_tip = temp_position[2]
++    r_tip = np.linalg.norm(temp_position)
++    xy_dist = np.linalg.norm(temp_position[:2])
++
++    if z_tip > bottom_z + limit:
++        if r_tip > radius + limit:
++            return SpotIO.SPHERE_OUT
++        if r_tip < radius - limit:
++            return SpotIO.POLYGON_MODE if stick_status > 0 else SpotIO.INSIDE
++        return SpotIO.BORDER
++
++    if z_tip < bottom_z - limit:
++        denom = temp_position[2] - base_position[2]
++        if abs(denom) < limit:
++            return SpotIO.SPHERE_OUT
++        t = (bottom_z - base_position[2]) / denom
++        if t < 0 or t > 1:
++            return SpotIO.SPHERE_OUT
++        intersect_xy = base_position[:2] + t * (temp_position[:2] - base_position[:2])
++        dist_xy = np.linalg.norm(intersect_xy)
++        if dist_xy < bottom_r + limit:
++            return SpotIO.BOTTOM_OUT
++        return SpotIO.SPHERE_OUT
++
++    if bottom_z - limit < z_tip < bottom_z + limit:
++        if xy_dist > bottom_r + limit:
++            return SpotIO.SPOT_EDGE_OUT
++        if abs(xy_dist - bottom_r) <= limit:
++            return SpotIO.BORDER
++        if xy_dist < bottom_r - limit:
++            if prev_stat in (SpotIO.SPOT_EDGE_OUT, SpotIO.POLYGON_MODE) or stick_status > 0:
++                return SpotIO.POLYGON_MODE
++            return SpotIO.SPOT_BOTTOM
++
++    return SpotIO.INSIDE
+ 
+ 
  def _line_sphere_intersection(p0: np.ndarray, p1: np.ndarray, r: float) -> tuple[np.ndarray, float]:
      """Return intersection point and remaining distance after hitting the sphere."""
      d = p1 - p0
@@ -69,19 +126,37 @@ index efff94e..2e945e5 100644
      t = min(t_candidates)
      intersection = p0 + d_unit * t
      remaining = max(d_norm - t, 0.0)
-     return intersection, remaining
- 
 diff --git a/core/simulation.py b/core/simulation.py
-index efff94e..2e945e5 100644
+index 2e945e5..7475072 100644
 --- a/core/simulation.py
 +++ b/core/simulation.py
-@@ -207,54 +225,80 @@ class SpermSimulation:
+@@ -206,99 +251,102 @@ class SpermSimulation:
+             shape_obj = SpotShape(self.constants)
+         elif shape == "drop":
+             shape_obj = DropShape(self.constants)
+         elif shape == "ceros":
+             shape_obj = CerosShape(self.constants)
+         else:
+             raise ValueError(f"Unsupported shape: {shape}")
+ 
+         # ---- シミュレーション設定 -------------------------------------
+         number_of_sperm  = int(self.constants.get("number_of_sperm", 10))
+         number_of_steps  = int(self.constants.get("number_of_steps", 10))
+         step_len         = self.constants["step_length"]     # ← mm / step
+         seed_val         = self.constants.get("seed_number")
+         if seed_val is not None and str(seed_val).lower() != "none":
+             try:
+                 seed_int = int(seed_val)
+                 # --- 全ての乱数生成を同じシードで制御するため ---
+                 np.random.seed(seed_int)
+                 rng = np.random.default_rng(seed_int)
              except Exception:
                  rng = np.random.default_rng()
          else:
              rng = np.random.default_rng()
  
          self.trajectory = []   # ← 毎 run() でリセット
++        prev_states = [SpotIO.INSIDE for _ in range(number_of_sperm)]
  
          # ---- ループ ---------------------------------------------------
          for rep in range(int(sim_repeat)):
@@ -89,7 +164,8 @@ index efff94e..2e945e5 100644
  
                  pos = shape_obj.initial_position()     # mm
                  traj = [pos.copy()]
- 
+-
++                
                  # 初期方向
                  vec = rng.normal(size=3)
                  vec /= np.linalg.norm(vec) + 1e-12
@@ -101,37 +177,41 @@ index efff94e..2e945e5 100644
                      if shape == "drop":
                          status = _io_check_drop(candidate, self.constants)
                          if status == "outside":
--                            intersect, remain = _line_sphere_intersection(pos, candidate, self.constants["drop_r"])
-+                            intersect, remain = _line_sphere_intersection(
-+                                pos, candidate, self.constants["drop_r"]
-+                            )
-+                            normal = intersect / (np.linalg.norm(intersect) + 1e-12)
-+                            vec = _reflect(vec, normal)
-+                            candidate = intersect + vec * remain
-+                    elif shape == "spot":
-+                        status = _io_check_spot(candidate, self.constants)
-+                        if status == "outside":
-+                            intersect, remain = _line_sphere_intersection(
-+                                pos, candidate, self.constants["spot_r"]
-+                            )
+                             intersect, remain = _line_sphere_intersection(
+                                 pos, candidate, self.constants["drop_r"]
+                             )
                              normal = intersect / (np.linalg.norm(intersect) + 1e-12)
                              vec = _reflect(vec, normal)
                              candidate = intersect + vec * remain
-+                        elif status == "bottom":
-+                            bottom_z = self.constants["spot_bottom_height"]
-+                            step_vec = vec * step_len
-+                            if abs(step_vec[2]) < 1e-12:
-+                                normal = np.array([0.0, 0.0, 1.0])
-+                                vec = _reflect(vec, normal)
-+                                candidate = pos + vec * step_len
-+                            else:
-+                                t = (bottom_z - pos[2]) / step_vec[2]
-+                                t = max(0.0, min(1.0, t))
-+                                intersect = pos + step_vec * t
-+                                remain = step_len * (1.0 - t)
-+                                normal = np.array([0.0, 0.0, 1.0])
-+                                vec = _reflect(vec, normal)
-+                                candidate = intersect + vec * remain
+                     elif shape == "spot":
+-                        status = _io_check_spot(candidate, self.constants)
+-                        if status == "outside":
++                        prev = prev_states[i]
++                        status = _io_check_spot(pos, candidate, self.constants, prev)
++                        if status == SpotIO.SPHERE_OUT or status == SpotIO.SPOT_EDGE_OUT:
+                             intersect, remain = _line_sphere_intersection(
+                                 pos, candidate, self.constants["spot_r"]
+                             )
+                             normal = intersect / (np.linalg.norm(intersect) + 1e-12)
+                             vec = _reflect(vec, normal)
+                             candidate = intersect + vec * remain
+-                        elif status == "bottom":
++                        elif status == SpotIO.BOTTOM_OUT:
+                             bottom_z = self.constants["spot_bottom_height"]
+                             step_vec = vec * step_len
+                             if abs(step_vec[2]) < 1e-12:
+                                 normal = np.array([0.0, 0.0, 1.0])
+                                 vec = _reflect(vec, normal)
+                                 candidate = pos + vec * step_len
+                             else:
+                                 t = (bottom_z - pos[2]) / step_vec[2]
+                                 t = max(0.0, min(1.0, t))
+                                 intersect = pos + step_vec * t
+                                 remain = step_len * (1.0 - t)
+                                 normal = np.array([0.0, 0.0, 1.0])
+                                 vec = _reflect(vec, normal)
+                                 candidate = intersect + vec * remain
++                        prev_states[i] = status
                      pos = candidate
                      traj.append(pos.copy())
  
