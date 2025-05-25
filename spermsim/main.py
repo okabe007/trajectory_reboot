@@ -874,7 +874,7 @@ def IO_check_drop(temp_position, stick_status, constants):
     else:
         IO_status = IOStatus.BORDER
     return IO_status
-def IO_check_spot(base_position, temp_position, constants, IO_status):
+def IO_check_spot(base_position, temp_position, constants, IO_status, stick_status=0):
     """
     Spot形状におけるIO判定。
     後者の「うまくいくプログラム」と同一仕様になるように修正。
@@ -888,9 +888,13 @@ def IO_check_spot(base_position, temp_position, constants, IO_status):
     if z_tip > bottom_z + constants['limit']:
         if r_tip > radius + constants['limit']:
             return IOStatus.SPHERE_OUT
+        elif r_tip < radius - constants['limit']:
+            if stick_status > 0:
+                return IOStatus.TEMP_ON_POLYGON
+            else:
+                return IOStatus.INSIDE
         else:
-#             return "inside"  # ★DEPRECATED
-            return IOStatus.INSIDE
+            return IOStatus.BORDER
     elif z_tip < bottom_z - constants['limit']:
         denom = (temp_position[2] - base_position[2])
         t = (bottom_z - base_position[2]) / denom
@@ -908,7 +912,7 @@ def IO_check_spot(base_position, temp_position, constants, IO_status):
         elif abs(xy_dist - bottom_r) <= constants['limit']:
             return IOStatus.BORDER
         elif xy_dist < bottom_r - constants['limit']:
-            if IO_status in [IOStatus.SPOT_EDGE_OUT, IOStatus.POLYGON_MODE]:
+            if IO_status in [IOStatus.SPOT_EDGE_OUT, IOStatus.POLYGON_MODE] or stick_status > 0:
                 return IOStatus.POLYGON_MODE
             else:
                 return IOStatus.SPOT_BOTTOM
@@ -1158,7 +1162,7 @@ class SpermSimulation:
                 prev_stat = self.prev_IO_status[j]
                 if prev_stat is None:
                     prev_stat = "none"
-                new_IO_status = IO_check_spot(base_position, temp_position, constants, prev_stat)
+                new_IO_status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
                 vertex_point = None
                 if new_IO_status == IOStatus.BORDER:
                     vec = temp_position - base_position
@@ -1166,7 +1170,7 @@ class SpermSimulation:
                     if vec_length > constants['limit']:
                         adjusted_vec = vec * 0.99
                         temp_position = base_position + adjusted_vec
-                        new_IO_status = IO_check_spot(base_position, temp_position, constants, prev_stat)
+                        new_IO_status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
                     if new_IO_status == IOStatus.BORDER:
                         raise RuntimeError("rethink logic 3")
             else:
@@ -2324,11 +2328,11 @@ def _detect_boundary(shape, base_position, temp_position, stick_status, constant
         return status, None, temp_position
 
     if shape == "spot":
-        status = IO_check_spot(base_position, temp_position, constants, prev_stat)
+        status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
         if status == IOStatus.BORDER:
             vec = temp_position - base_position
             temp_position = base_position + vec * 0.99
-            status = IO_check_spot(base_position, temp_position, constants, prev_stat)
+            status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
         return status, None, temp_position
 
     return IOStatus.INSIDE, None, temp_position
