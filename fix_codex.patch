@@ -1,165 +1,148 @@
-diff --git a/core/simulation.py b/core/simulation.py
-index 7bf647d..3d810b6 100644
---- a/core/simulation.py
-+++ b/core/simulation.py
-@@ -67,50 +67,94 @@ def _egg_position(constants):
-         spot_r = constants.get("spot_r", 0)
-         spot_bottom_height = constants.get("spot_bottom_height", 0)
-         positions = {
-             "center": (0, 0, (spot_bottom_height + spot_r) / 2),
-             "bottom_center": (0, 0, spot_bottom_height + r),
-             "bottom_edge": (
-                 math.sqrt(max((spot_r - r) ** 2 - (spot_bottom_height + r) ** 2, 0)),
-                 0,
-                 spot_bottom_height + r,
-             ),
-         }
-     elif shape == "ceros":
-         cx = (constants["x_min"] + constants["x_max"]) / 2
-         cy = (constants["y_min"] + constants["y_max"]) / 2
-         cz = (constants["z_min"] + constants["z_max"]) / 2
-         positions = {"center": (cx, cy, cz), "bottom_center": (cx, cy, cz), "bottom_edge": (cx, cy, cz)}
-     else:
-         raise RuntimeError(f"Unknown shape '{shape}'")
+diff --git a/spermsim/main.py b/spermsim/main.py
+index cba622c..8741865 100644
+--- a/spermsim/main.py
++++ b/spermsim/main.py
+@@ -1,53 +1,77 @@
+ import ast
+ import configparser
+ import os
+ import random
+ import sqlite3
+ import sys
+ import time
+ from datetime import datetime
+ from enum import Enum
  
-     if loc not in positions:
-         raise RuntimeError(f"Invalid egg_localization '{loc}' for shape '{shape}'")
+ # IO 状態を表す列挙型（独自定義または外部ファイルから）
+ from io_status import IOStatus
  
-     return positions[loc]
+ # --- GUIライブラリ ---
+ import tkinter as tk
  
+ # --- 外部ライブラリ ---
+ import matplotlib
+ matplotlib.use("Agg")  # GUI 非依存の描画専用モード
+ import matplotlib.pyplot as plt
+ from matplotlib.animation import FuncAnimation
+ import matplotlib.patches as patches
+ import numpy as np
+ import numpy.linalg as LA
+ import pandas as pd
+-from scipy.spatial.transform import Rotation as R
+ from tqdm import tqdm
  
-+def _io_check_drop(position: np.ndarray, constants: dict) -> str:
-+    """Return 'inside', 'border', or 'outside' for drop shape."""
-+    r = constants.get("drop_r", 0.0)
-+    limit = constants.get("limit", 1e-9)
-+    dist = np.linalg.norm(position)
-+    if dist > r + limit:
-+        return "outside"
-+    elif dist < r - limit:
-+        return "inside"
-+    else:
-+        return "border"
 +
++def rotation_matrix_from_vectors(vec1, vec2):
++    """Return rotation matrix that rotates vec1 to vec2."""
++    a = np.array(vec1, dtype=float)
++    b = np.array(vec2, dtype=float)
++    a /= LA.norm(a) + 1e-12
++    b /= LA.norm(b) + 1e-12
++    v = np.cross(a, b)
++    c = np.dot(a, b)
++    s = LA.norm(v)
++    if s < 1e-12:
++        if c > 0:
++            return np.eye(3)
++        if abs(a[0]) < 0.9:
++            perp = np.array([1.0, 0.0, 0.0])
++        else:
++            perp = np.array([0.0, 1.0, 0.0])
++        v = np.cross(a, perp)
++        v /= LA.norm(v) + 1e-12
++        vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
++        return -np.eye(3) + 2 * np.outer(v, v)
++    vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
++    rot = np.eye(3) + vx + vx @ vx * ((1 - c) / (s ** 2))
++    return rot
 +
-+def _line_sphere_intersection(p0: np.ndarray, p1: np.ndarray, r: float) -> tuple[np.ndarray, float]:
-+    """Return intersection point and remaining distance after hitting the sphere."""
-+    d = p1 - p0
-+    d_norm = np.linalg.norm(d)
-+    if d_norm < 1e-12:
-+        return p0.copy(), 0.0
-+    d_unit = d / d_norm
-+    f = p0
-+    a = 1.0
-+    b = 2.0 * float(f @ d_unit)
-+    c = float(f @ f) - r * r
-+    disc = b * b - 4 * a * c
-+    if disc < 0:
-+        return p0.copy(), 0.0
-+    sqrt_disc = math.sqrt(disc)
-+    t1 = (-b - sqrt_disc) / (2 * a)
-+    t2 = (-b + sqrt_disc) / (2 * a)
-+    t_candidates = [t for t in (t1, t2) if t >= 0]
-+    if not t_candidates:
-+        return p0.copy(), 0.0
-+    t = min(t_candidates)
-+    intersection = p0 + d_unit * t
-+    remaining = max(d_norm - t, 0.0)
-+    return intersection, remaining
-+
-+
-+def _reflect(vec: np.ndarray, normal: np.ndarray) -> np.ndarray:
-+    """Reflect ``vec`` on plane defined by ``normal``."""
-+    return vec - 2.0 * np.dot(vec, normal) * normal
-+
-+
- class SpermSimulation:
-     def __init__(self, constants):
-         self.constants = constants
+ # --- 派生変数一元計算モジュールをインポート ---
+ from tools.derived_constants import calculate_derived_constants
+ from core.simulation import SpermSimulation as CoreSpermSimulation
  
-         # --- 型安全化：数値パラメータはfloat/intに変換 ---
-         float_keys = [
-             "spot_angle", "vol", "sperm_conc", "vsl", "deviation", "surface_time",
-             "gamete_r", "sim_min", "sampl_rate_hz"
-         ]
-         int_keys = [
-             "sim_repeat"
-         ]
-         for key in float_keys:
-             if key in self.constants and not isinstance(self.constants[key], float):
-                 try:
-                     self.constants[key] = float(self.constants[key])
-                 except Exception:
-                     print(f"[WARNING] {key} = {self.constants[key]} をfloat変換できませんでした")
-         for key in int_keys:
-             if key in self.constants and not isinstance(self.constants[key], int):
-                 try:
-                     self.constants[key] = int(float(self.constants[key]))
-                 except Exception:
-                     print(f"[WARNING] {key} = {self.constants[key]} をint変換できませんでした")
-         # shape, egg_localization, などはstr型のままでOK
-diff --git a/core/simulation.py b/core/simulation.py
-index 7bf647d..3d810b6 100644
---- a/core/simulation.py
-+++ b/core/simulation.py
-@@ -159,52 +203,59 @@ class SpermSimulation:
-                 seed_int = int(seed_val)
-                 # --- 全ての乱数生成を同じシードで制御するため ---
-                 np.random.seed(seed_int)
-                 rng = np.random.default_rng(seed_int)
-             except Exception:
-                 rng = np.random.default_rng()
+ # --- ジオメトリ関連クラス/ファクトリ ---
+ from .geometry import create_shape  # 必要ならself-import等は調整
+ 
+ # --- データ・画像・動画保存パス等 ---
+ try:
+     _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ except NameError:
+     _SCRIPT_DIR = os.getcwd()
+ 
+ DATA_DIR  = os.path.join(_SCRIPT_DIR, "data")
+ IMG_DIR   = os.path.join(DATA_DIR, "graphs")
+ MOV_DIR   = os.path.join(DATA_DIR, "movies")
+ os.makedirs(IMG_DIR, exist_ok=True)
+ os.makedirs(MOV_DIR, exist_ok=True)
+ DB_PATH_DEFAULT = os.path.join(DATA_DIR, "Trajectory.db")
+ 
+ def _safe_anim_save(anim, output_path):
+     """
+     ffmpegが無くてもPillowWriterで保存を試みる安全ラッパー
+     """
+     try:
+diff --git a/spermsim/main.py b/spermsim/main.py
+index cba622c..8741865 100644
+--- a/spermsim/main.py
++++ b/spermsim/main.py
+@@ -1422,57 +1446,57 @@ class SpermSimulation:
+                 new_tangent = rotate_vector_2d(selected_tangent, angle_adjust)
+                 norm_tan = np.linalg.norm(new_tangent)
+                 if norm_tan < constants['limit']:
+                     new_tangent = selected_tangent
+                     norm_tan = np.linalg.norm(new_tangent)
+                 new_tangent /= norm_tan
+                 last_vec_corrected = new_tangent * new_remaining
+                 new_temp_position = intersection_point + last_vec_corrected
+                 new_temp_position[2] = z_floor
+                 new_last_vec = new_temp_position - intersection_point
+             else:
+                 new_remaining = np.linalg.norm(last_vec)
+                 sphere_normal_3d = intersection_point
+                 norm_sphere = np.linalg.norm(sphere_normal_3d)
+                 if norm_sphere < constants['limit']:
+                     sphere_normal_3d = np.array([0,0,1])
+                     norm_sphere = 1.0
+                 sphere_normal_3d /= norm_sphere
+                 plane_normal = np.array([0,0,1], dtype=float)
+                 dot_val = np.clip(np.dot(sphere_normal_3d, plane_normal), -1, 1)
+                 angle_plane_sphere = np.arccos(dot_val)
+                 def sample_vector_in_cone(axis, max_angle):
+                     cos_max = np.cos(max_angle)
+                     z_ = np.random.uniform(cos_max, 1.0)
+                     phi_ = np.random.uniform(0, 2*np.pi)
+-                    sqrt_part = np.sqrt(1 - z_*z_)
++                    sqrt_part = np.sqrt(1 - z_ * z_)
+                     x_local = sqrt_part * np.cos(phi_)
+                     y_local = sqrt_part * np.sin(phi_)
+                     z_local = z_
+-                    rot = R.align_vectors([[0,0,1]], [axis])[0]
++                    rot = rotation_matrix_from_vectors([0, 0, 1], axis)
+                     v_local = np.array([x_local, y_local, z_local])
+-                    return rot.apply(v_local)
++                    return rot.dot(v_local)
+                 center_axis = (plane_normal + sphere_normal_3d) / 2
+                 center_axis_norm = np.linalg.norm(center_axis)
+                 if center_axis_norm < constants['limit']:
+                     center_axis = plane_normal
+                     center_axis_norm = 1.0
+                 center_axis /= center_axis_norm
+                 open_angle = angle_plane_sphere
+                 random_3d_dir = sample_vector_in_cone(center_axis, open_angle)
+                 last_vec_corrected = random_3d_dir * new_remaining
+                 new_temp_position = intersection_point + last_vec_corrected
+                 new_last_vec = new_temp_position - intersection_point
          else:
-             rng = np.random.default_rng()
+             new_temp_position = candidate_position
+             new_last_vec = last_vec
+         new_stick_status = stick_status
+         if new_stick_status > 0:
+             new_stick_status -= 1
+         if new_stick_status <= 0:
+             new_state = IOStatus.INSIDE
+         else:
+             new_state = IOStatus.BOTTOM_EDGE_MODE
+         return new_temp_position, new_last_vec, new_stick_status, new_state
+ class SpermPlot:
+     already_saved_global_flag = False
  
-         self.trajectory = []   # ← 毎 run() でリセット
- 
-         # ---- ループ ---------------------------------------------------
-         for rep in range(int(sim_repeat)):
-             for i in range(number_of_sperm):
- 
-                 pos = shape_obj.initial_position()     # mm
-                 traj = [pos.copy()]
- 
-                 # 初期方向
-                 vec = rng.normal(size=3)
-                 vec /= np.linalg.norm(vec) + 1e-12
- 
-                 for j in range(number_of_steps):
-                     if j > 0:
-                         vec = _perturb_direction(vec, self.constants["deviation"], rng)
--
--                    pos = pos + vec * step_len         # ★ mm 単位で更新
-+                    candidate = pos + vec * step_len
-+                    if shape == "drop":
-+                        status = _io_check_drop(candidate, self.constants)
-+                        if status == "outside":
-+                            intersect, remain = _line_sphere_intersection(pos, candidate, self.constants["drop_r"])
-+                            normal = intersect / (np.linalg.norm(intersect) + 1e-12)
-+                            vec = _reflect(vec, normal)
-+                            candidate = intersect + vec * remain
-+                    pos = candidate
-                     traj.append(pos.copy())
- 
-                     if rep == 0 and i == 0 and j == 0:
-                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
- 
-                 self.trajectory.append(np.vstack(traj))
- 
-         print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, "
-               f"step_len={step_len} mm")
- 
- 
- 
-     import matplotlib.pyplot as plt
- 
-     def plot_trajectories(self, max_sperm=5, save_path=None):
-         """
-         インスタンスのself.trajectory（リスト of N×3 配列）を可視化
-         max_sperm: 表示する精子軌跡の最大本数
-         save_path: Noneなら画面表示のみ、パス指定で保存
-         """
-         import matplotlib.pyplot as plt
-         import numpy as np
-         import os
- 
-         trajectories = np.array(self.trajectory)
