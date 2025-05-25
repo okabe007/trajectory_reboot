@@ -517,6 +517,52 @@ def cut_and_bend_sphere(base_position, remaining_distance, temp_position, consta
         else:
             inward_dir /= norm_id
     return new_temp_position, intersection_point, remaining_distance, inward_dir
+
+def cut_and_bend_drop(base_position, remaining_distance, temp_position, constants):
+    """Handle reflection for drop shape.
+
+    This mirrors :func:`cut_and_bend_sphere` but uses ``drop_r`` for the
+    radius.  The resulting vector is rotated slightly inside the sphere so
+    that the sperm keeps moving within the droplet after reflection.
+    """
+
+    radius = constants['drop_r']
+    modify_angle = constants['inner_angle']
+
+    intersection_point, remaining_distance = line_sphere_intersection(
+        base_position, temp_position, radius, remaining_distance, constants
+    )
+
+    oi_normalized, bi_normalized = compute_normalized_vectors(
+        base_position, intersection_point, constants
+    )
+
+    selected_tangent, normal_B = compute_tangent_vectors(oi_normalized, bi_normalized)
+
+    modify_angle = determine_rotation_direction(
+        selected_tangent, normal_B, bi_normalized, modify_angle
+    )
+
+    last_vec = rotate_vector(selected_tangent, normal_B, modify_angle)
+    last_vec_normalized = normalize_vector(last_vec)
+    last_vec = last_vec_normalized * remaining_distance
+
+    new_temp_position = intersection_point + last_vec
+
+    lv_dot = np.dot(last_vec, last_vec)
+    if abs(lv_dot) < constants['limit']:
+        inward_dir = np.array([0.0, 0.0, 0.0])
+    else:
+        t = - np.dot(intersection_point, last_vec) / lv_dot
+        F = intersection_point + t * last_vec
+        inward_dir = -F
+        norm_id = LA.norm(inward_dir)
+        if norm_id < constants['limit']:
+            inward_dir = np.array([0.0, 0.0, 0.0])
+        else:
+            inward_dir /= norm_id
+
+    return new_temp_position, intersection_point, remaining_distance, inward_dir
 def _calculate_inward_dir_from_axes_hit(x, y, z, x_min, x_max, y_min, y_max, z_min, z_max, constants):
     on_x_min = abs(x - x_min) <= constants['limit']
     on_x_max = abs(x - x_max) <= constants['limit']
@@ -1218,12 +1264,20 @@ class SpermSimulation:
             elif IO_status == IOStatus.SPHERE_OUT:
                 if stick_status == 0:
                     stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
-                new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_sphere(
-                    self.trajectory[j, i - 1],
-                    remaining_distance,
-                    temp_position,
-                    constants
-                )
+                if shape == "drop":
+                    new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_drop(
+                        self.trajectory[j, i - 1],
+                        remaining_distance,
+                        temp_position,
+                        constants,
+                    )
+                else:
+                    new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_sphere(
+                        self.trajectory[j, i - 1],
+                        remaining_distance,
+                        temp_position,
+                        constants,
+                    )
                 base_position = intersection_point
                 temp_position = new_temp_pos
                 last_vec = temp_position - intersection_point

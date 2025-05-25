@@ -1,98 +1,176 @@
-diff --git a/core/simulation.py b/core/simulation.py
-index 7bf647d..db7a3c8 100644
---- a/core/simulation.py
-+++ b/core/simulation.py
-@@ -332,26 +332,92 @@ class SpermSimulation:
- 
-         # 本数注釈
-         fig.text(0.99, 0.01, f"※ 表示は全体の{perc_shown:.1f}%（{n_plot}本/{len(trajectories)}本）", ha='right', fontsize=10, color="gray")
- 
-         fig.tight_layout(rect=[0, 0.03, 1, 0.92])
- 
-         # --- 保存先パスをスクリプトの場所基準で作る ---
-         import datetime
-         dtstr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
- 
-         # このスクリプトがあるディレクトリを基準にする
-         base_dir = os.path.dirname(__file__)
-         figs_dir = os.path.join(base_dir, "figs_and_movies")
-         os.makedirs(figs_dir, exist_ok=True)
- 
-         if save_path is None:
-             # 自動で日付入りファイル名
-             save_path = os.path.join(figs_dir, f"trajectory_{dtstr}.png")
+diff --git a/spermsim/main.py b/spermsim/main.py
+index 3f2f5b5..cba622c 100644
+--- a/spermsim/main.py
++++ b/spermsim/main.py
+@@ -495,50 +495,96 @@ def cut_and_bend_sphere(base_position, remaining_distance, temp_position, consta
+     )
+     oi_normalized, bi_normalized = compute_normalized_vectors(
+         base_position, intersection_point, constants
+     )
+     selected_tangent, normal_B = compute_tangent_vectors(oi_normalized, bi_normalized)
+     modify_angle = determine_rotation_direction(
+         selected_tangent, normal_B, bi_normalized, modify_angle
+     )
+     last_vec = rotate_vector(selected_tangent, normal_B, modify_angle)
+     last_vec_normalized = normalize_vector(last_vec)
+     last_vec = last_vec_normalized * remaining_distance
+     new_temp_position = intersection_point + last_vec
+     lv_dot = np.dot(last_vec, last_vec)
+     if abs(lv_dot) < constants['limit']:
+         inward_dir = np.array([0.0, 0.0, 0.0])
+     else:
+         t = - np.dot(intersection_point, last_vec) / lv_dot
+         F = intersection_point + t * last_vec
+         inward_dir = -F
+         norm_id = LA.norm(inward_dir)
+         if norm_id < constants['limit']:
+             inward_dir = np.array([0.0,0.0,0.0])
          else:
-             # ファイル名だけ渡された場合もFigs_and_Moviesに入れる
-             filename = os.path.basename(save_path)
-             save_path = os.path.join(figs_dir, filename)
- 
-         plt.savefig(save_path)
-         plt.close()
--        print(f"[INFO] 軌跡画像を保存しました: {save_path}")
-+        print(f"[INFO] 軌跡画像を保存しました: {save_path}")
+             inward_dir /= norm_id
+     return new_temp_position, intersection_point, remaining_distance, inward_dir
 +
-+    def plot_movie_trajectories(self, save_path=None, fps: int = 5):
-+        """Animate recorded trajectories and save to a movie file."""
-+        import numpy as np
-+        from matplotlib.animation import FuncAnimation
++def cut_and_bend_drop(base_position, remaining_distance, temp_position, constants):
++    """Handle reflection for drop shape.
 +
-+        trajectories = np.array(self.trajectory)
-+        if trajectories is None or len(trajectories) == 0:
-+            print("[WARNING] 軌跡データがありません。run()実行後にplot_movie_trajectoriesしてください。")
-+            return None
++    This mirrors :func:`cut_and_bend_sphere` but uses ``drop_r`` for the
++    radius.  The resulting vector is rotated slightly inside the sphere so
++    that the sperm keeps moving within the droplet after reflection.
++    """
 +
-+        n_sperm, n_frames, _ = trajectories.shape
++    radius = constants['drop_r']
++    modify_angle = constants['inner_angle']
 +
-+        fig = plt.figure(figsize=(6, 6))
-+        ax = fig.add_subplot(111, projection="3d")
++    intersection_point, remaining_distance = line_sphere_intersection(
++        base_position, temp_position, radius, remaining_distance, constants
++    )
 +
-+        const = self.constants
-+        ax.set_xlim(const["x_min"], const["x_max"])
-+        ax.set_ylim(const["y_min"], const["y_max"])
-+        ax.set_zlim(const["z_min"], const["z_max"])
-+        ax.set_box_aspect([
-+            const["x_max"] - const["x_min"],
-+            const["y_max"] - const["y_min"],
-+            const["z_max"] - const["z_min"],
-+        ])
++    oi_normalized, bi_normalized = compute_normalized_vectors(
++        base_position, intersection_point, constants
++    )
 +
-+        lines = [ax.plot([], [], [], lw=1)[0] for _ in range(n_sperm)]
++    selected_tangent, normal_B = compute_tangent_vectors(oi_normalized, bi_normalized)
 +
-+        def init():
-+            for ln in lines:
-+                ln.set_data([], [])
-+                ln.set_3d_properties([])
-+            return lines
++    modify_angle = determine_rotation_direction(
++        selected_tangent, normal_B, bi_normalized, modify_angle
++    )
 +
-+        def update(frame):
-+            for i, ln in enumerate(lines):
-+                ln.set_data(trajectories[i, : frame + 1, 0], trajectories[i, : frame + 1, 1])
-+                ln.set_3d_properties(trajectories[i, : frame + 1, 2])
-+            return lines
++    last_vec = rotate_vector(selected_tangent, normal_B, modify_angle)
++    last_vec_normalized = normalize_vector(last_vec)
++    last_vec = last_vec_normalized * remaining_distance
 +
-+        anim = FuncAnimation(fig, update, init_func=init, frames=n_frames, interval=1000 / fps, blit=False)
++    new_temp_position = intersection_point + last_vec
 +
-+        base_dir = os.path.dirname(__file__)
-+        mov_dir = os.path.join(base_dir, "figs_and_movies")
-+        os.makedirs(mov_dir, exist_ok=True)
-+        if save_path is None:
-+            dtstr = datetime.now().strftime("%Y%m%d_%H%M%S")
-+            save_path = os.path.join(mov_dir, f"trajectory_{dtstr}.mp4")
++    lv_dot = np.dot(last_vec, last_vec)
++    if abs(lv_dot) < constants['limit']:
++        inward_dir = np.array([0.0, 0.0, 0.0])
++    else:
++        t = - np.dot(intersection_point, last_vec) / lv_dot
++        F = intersection_point + t * last_vec
++        inward_dir = -F
++        norm_id = LA.norm(inward_dir)
++        if norm_id < constants['limit']:
++            inward_dir = np.array([0.0, 0.0, 0.0])
 +        else:
-+            filename = os.path.basename(save_path)
-+            save_path = os.path.join(mov_dir, filename)
++            inward_dir /= norm_id
 +
-+        try:
-+            anim.save(save_path, writer="ffmpeg", fps=fps)
-+        except Exception as e:
-+            print(f"[WARN] ffmpeg保存失敗 ({e}) → pillow writerで再試行")
-+            try:
-+                anim.save(save_path, writer="pillow", fps=fps)
-+            except Exception as e2:
-+                print(f"[ERROR] pillow writerでも保存に失敗: {e2}")
-+                return None
-+
-+        plt.close(fig)
-+        print(f"[INFO] 動画を保存しました: {save_path}")
-+        return save_path
-+
++    return new_temp_position, intersection_point, remaining_distance, inward_dir
+ def _calculate_inward_dir_from_axes_hit(x, y, z, x_min, x_max, y_min, y_max, z_min, z_max, constants):
+     on_x_min = abs(x - x_min) <= constants['limit']
+     on_x_max = abs(x - x_max) <= constants['limit']
+     on_y_min = abs(y - y_min) <= constants['limit']
+     on_y_max = abs(y - y_max) <= constants['limit']
+     on_z_min = abs(z - z_min) <= constants['limit']
+     on_z_max = abs(z - z_max) <= constants['limit']
+     hit_count = sum([on_x_min, on_x_max, on_y_min, on_y_max, on_z_min, on_z_max])
+     pinned_coords = []
+     free_axes = []
+     if on_x_min:
+         pinned_coords.append(('x', x_min))
+     elif on_x_max:
+         pinned_coords.append(('x', x_max))
+     else:
+         free_axes.append('x')
+     if on_y_min:
+         pinned_coords.append(('y', y_min))
+     elif on_y_max:
+         pinned_coords.append(('y', y_max))
+     else:
+         free_axes.append('y')
+     if on_z_min:
+         pinned_coords.append(('z', z_min))
+     elif on_z_max:
+diff --git a/spermsim/main.py b/spermsim/main.py
+index 3f2f5b5..cba622c 100644
+--- a/spermsim/main.py
++++ b/spermsim/main.py
+@@ -1196,56 +1242,64 @@ class SpermSimulation:
+                 else:            
+                     self.trajectory[j, i] = temp_position
+                     base_position = self.trajectory[j, i]
+                     remaining_distance = constants['step_length']
+                     if stick_status > 0:
+                         stick_status -= 1
+                     if len(intersection_point) != 0:
+                         last_vec = temp_position - intersection_point
+                         intersection_point = np.array([])
+                     else:
+                         last_vec = self.trajectory[j, i] - self.trajectory[j, i - 1]
+                     if LA.norm(last_vec) < constants['limit']:
+                         raise RuntimeError("last vec is too short!")
+                     new_vec = prepare_new_vector(
+                         last_vec, constants,
+                         boundary_type="free",
+                         stick_status=stick_status,
+                         inward_dir=None
+                     )
+                     temp_position = self.trajectory[j, i] + new_vec
+                 i += 1
+                 continue
+             elif IO_status == IOStatus.SPHERE_OUT:
+                 if stick_status == 0:
+                     stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
+-                new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_sphere(
+-                    self.trajectory[j, i - 1],
+-                    remaining_distance,
+-                    temp_position,
+-                    constants
+-                )
++                if shape == "drop":
++                    new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_drop(
++                        self.trajectory[j, i - 1],
++                        remaining_distance,
++                        temp_position,
++                        constants,
++                    )
++                else:
++                    new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_sphere(
++                        self.trajectory[j, i - 1],
++                        remaining_distance,
++                        temp_position,
++                        constants,
++                    )
+                 base_position = intersection_point
+                 temp_position = new_temp_pos
+                 last_vec = temp_position - intersection_point
+                 continue
+             elif IO_status == IOStatus.POLYGON_MODE:
+                 self.trajectory[j, i] = temp_position
+                 base_position = self.trajectory[j, i]
+                 if len(intersection_point) != 0:
+                     last_vec = temp_position - intersection_point
+                     intersection_point = np.array([])
+                 else:
+                     last_vec = self.trajectory[j, i] - self.trajectory[j, i - 1]
+                 new_temp_position, new_last_vec, updated_stick, next_state = self.bottom_edge_mode(
+                     base_position, last_vec, stick_status, constants
+                 )
+                 temp_position = new_temp_position
+                 last_vec = new_last_vec
+                 stick_status = updated_stick
+                 i += 1
+                 IO_status = next_state
+                 continue
+             elif IO_status == IOStatus.SPOT_EDGE_OUT:
+                 if stick_status == 0:
+                     stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
+                 (new_temp_pos,
