@@ -1,204 +1,159 @@
-diff --git a/spermsim/main.py b/spermsim/main.py
-index 3f2f5b5..b45893a 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -782,85 +782,89 @@ def IO_check_cube(temp_position, constants):
-         return IOStatus.VERTEX_OUT, vertex_coords
-     elif (
-         (inside_count == 1 and surface_count == 1 and outside_count == 1) or
-         (inside_count == 0 and surface_count == 1 and outside_count == 2)
-     ):
-         return IOStatus.EDGE_OUT, None
-     elif inside_count == 0 and surface_count == 0 and outside_count == 3:
-         return IOStatus.SURFACE_OUT, None
-     elif inside_count == 0 and surface_count == 3 and outside_count == 0:
-         return IOStatus.BORDER, None
+diff --git a/core/simulation.py b/core/simulation.py
+index efff94e..2e945e5 100644
+--- a/core/simulation.py
++++ b/core/simulation.py
+@@ -80,50 +80,68 @@ def _egg_position(constants):
+         cy = (constants["y_min"] + constants["y_max"]) / 2
+         cz = (constants["z_min"] + constants["z_max"]) / 2
+         positions = {"center": (cx, cy, cz), "bottom_center": (cx, cy, cz), "bottom_edge": (cx, cy, cz)}
      else:
-         raise ValueError("Unknown inside/surface/outside combination")
- def IO_check_drop(temp_position, stick_status, constants):
-     distance_from_center = LA.norm(temp_position)
-     radius = constants['drop_r']
-     if distance_from_center > radius + constants['limit']:
-         IO_status = IOStatus.SPHERE_OUT
-     elif distance_from_center < radius - constants['limit']:
-         if stick_status > 0:
-             IO_status = IOStatus.TEMP_ON_POLYGON
-         else:
-             IO_status = IOStatus.INSIDE
+         raise RuntimeError(f"Unknown shape '{shape}'")
+ 
+     if loc not in positions:
+         raise RuntimeError(f"Invalid egg_localization '{loc}' for shape '{shape}'")
+ 
+     return positions[loc]
+ 
+ 
+ def _io_check_drop(position: np.ndarray, constants: dict) -> str:
+     """Return 'inside', 'border', or 'outside' for drop shape."""
+     r = constants.get("drop_r", 0.0)
+     limit = constants.get("limit", 1e-9)
+     dist = np.linalg.norm(position)
+     if dist > r + limit:
+         return "outside"
+     elif dist < r - limit:
+         return "inside"
      else:
-         IO_status = IOStatus.BORDER
-     return IO_status
--def IO_check_spot(base_position, temp_position, constants, IO_status):
-+def IO_check_spot(base_position, temp_position, constants, IO_status, stick_status=0):
-     """
-     Spot形状におけるIO判定。
-     後者の「うまくいくプログラム」と同一仕様になるように修正。
-     """
-     radius   = constants['radius']
-     bottom_z = constants['spot_bottom_height']
-     bottom_r = constants['spot_bottom_r']
-     z_tip = temp_position[2]
-     r_tip = LA.norm(temp_position)                    
-     xy_dist = np.sqrt(temp_position[0]**2 + temp_position[1]**2)
-     if z_tip > bottom_z + constants['limit']:
-         if r_tip > radius + constants['limit']:
-             return IOStatus.SPHERE_OUT
-+        elif r_tip < radius - constants['limit']:
-+            if stick_status > 0:
-+                return IOStatus.TEMP_ON_POLYGON
-+            else:
-+                return IOStatus.INSIDE
+         return "border"
+ 
+ 
++def _io_check_spot(position: np.ndarray, constants: dict) -> str:
++    """Return 'inside', 'outside', or 'bottom' for spot shape."""
++    r = constants.get("spot_r", 0.0)
++    bottom_z = constants.get("spot_bottom_height", 0.0)
++    bottom_r = constants.get("spot_bottom_r", 0.0)
++    limit = constants.get("limit", 1e-9)
++
++    if position[2] < bottom_z - limit:
++        # below the bottom plane
++        if np.linalg.norm(position[:2]) <= bottom_r + limit:
++            return "bottom"
++        # fall through to outside check on sphere
++
++    if np.linalg.norm(position) > r + limit:
++        return "outside"
++    return "inside"
++
++
+ def _line_sphere_intersection(p0: np.ndarray, p1: np.ndarray, r: float) -> tuple[np.ndarray, float]:
+     """Return intersection point and remaining distance after hitting the sphere."""
+     d = p1 - p0
+     d_norm = np.linalg.norm(d)
+     if d_norm < 1e-12:
+         return p0.copy(), 0.0
+     d_unit = d / d_norm
+     f = p0
+     a = 1.0
+     b = 2.0 * float(f @ d_unit)
+     c = float(f @ f) - r * r
+     disc = b * b - 4 * a * c
+     if disc < 0:
+         return p0.copy(), 0.0
+     sqrt_disc = math.sqrt(disc)
+     t1 = (-b - sqrt_disc) / (2 * a)
+     t2 = (-b + sqrt_disc) / (2 * a)
+     t_candidates = [t for t in (t1, t2) if t >= 0]
+     if not t_candidates:
+         return p0.copy(), 0.0
+     t = min(t_candidates)
+     intersection = p0 + d_unit * t
+     remaining = max(d_norm - t, 0.0)
+     return intersection, remaining
+ 
+diff --git a/core/simulation.py b/core/simulation.py
+index efff94e..2e945e5 100644
+--- a/core/simulation.py
++++ b/core/simulation.py
+@@ -207,54 +225,80 @@ class SpermSimulation:
+             except Exception:
+                 rng = np.random.default_rng()
          else:
--#             return "inside"  # ★DEPRECATED
--            return IOStatus.INSIDE
-+            return IOStatus.BORDER
-     elif z_tip < bottom_z - constants['limit']:
-         denom = (temp_position[2] - base_position[2])
-         t = (bottom_z - base_position[2]) / denom
-         if t < 0 or t > 1:
-             return IOStatus.SPHERE_OUT
-         intersect_xy = base_position[:2] + t*(temp_position[:2] - base_position[:2])
-         dist_xy = np.sqrt(intersect_xy[0]**2 + intersect_xy[1]**2)
-         if dist_xy < bottom_r + constants['limit']:
-             return IOStatus.BOTTOM_OUT
-         else:
-             return IOStatus.SPHERE_OUT
-     elif bottom_z - constants['limit'] < z_tip < bottom_z + constants['limit']:
-         if xy_dist > bottom_r + constants['limit']:
-             return IOStatus.SPOT_EDGE_OUT
-         elif abs(xy_dist - bottom_r) <= constants['limit']:
-             return IOStatus.BORDER
-         elif xy_dist < bottom_r - constants['limit']:
--            if IO_status in [IOStatus.SPOT_EDGE_OUT, IOStatus.POLYGON_MODE]:
-+            if IO_status in [IOStatus.SPOT_EDGE_OUT, IOStatus.POLYGON_MODE] or stick_status > 0:
-                 return IOStatus.POLYGON_MODE
-             else:
-                 return IOStatus.SPOT_BOTTOM
-     return IOStatus.INSIDE
- class SpermSimulation:
-     def initialize_thickness(self):
-         for j in range(self.number_of_sperm):
-             for i in range(self.number_of_steps):
-                 self.vec_thickness_2d[j, i] = 0.4
-                 self.vec_thickness_3d[j, i] = 1.5
+             rng = np.random.default_rng()
  
-     
-     def __init__(self, constants, visualizer, simulation_data):
+         self.trajectory = []   # ← 毎 run() でリセット
  
-         self.constants = constants  # ✅ 最初に設定
+         # ---- ループ ---------------------------------------------------
+         for rep in range(int(sim_repeat)):
+             for i in range(number_of_sperm):
  
-         self.number_of_sperm = self.constants["number_of_sperm"]
-         self.number_of_steps = self.constants["number_of_steps"]
+                 pos = shape_obj.initial_position()     # mm
+                 traj = [pos.copy()]
  
-         self.vec_thickness_2d = np.zeros((self.number_of_sperm, self.number_of_steps))
-         self.vec_thickness_3d = np.zeros((self.number_of_sperm, self.number_of_steps))
-         self.initialize_thickness()
+                 # 初期方向
+                 vec = rng.normal(size=3)
+                 vec /= np.linalg.norm(vec) + 1e-12
  
-         self.visualizer = visualizer
-         self.simulation = simulation_data
-diff --git a/spermsim/main.py b/spermsim/main.py
-index 3f2f5b5..b45893a 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -1066,59 +1070,59 @@ class SpermSimulation:
-         if self.n_stop is not None and not np.isnan(self.n_stop):
-             max_steps = int(self.n_stop)
-         else:
-             max_steps = self.number_of_steps
-         while i < self.number_of_steps:
-             max_safety_loops = 1000  # 無限ループ防止
+                 for j in range(number_of_steps):
+                     if j > 0:
+                         vec = _perturb_direction(vec, self.constants["deviation"], rng)
+                     candidate = pos + vec * step_len
+                     if shape == "drop":
+                         status = _io_check_drop(candidate, self.constants)
+                         if status == "outside":
+-                            intersect, remain = _line_sphere_intersection(pos, candidate, self.constants["drop_r"])
++                            intersect, remain = _line_sphere_intersection(
++                                pos, candidate, self.constants["drop_r"]
++                            )
++                            normal = intersect / (np.linalg.norm(intersect) + 1e-12)
++                            vec = _reflect(vec, normal)
++                            candidate = intersect + vec * remain
++                    elif shape == "spot":
++                        status = _io_check_spot(candidate, self.constants)
++                        if status == "outside":
++                            intersect, remain = _line_sphere_intersection(
++                                pos, candidate, self.constants["spot_r"]
++                            )
+                             normal = intersect / (np.linalg.norm(intersect) + 1e-12)
+                             vec = _reflect(vec, normal)
+                             candidate = intersect + vec * remain
++                        elif status == "bottom":
++                            bottom_z = self.constants["spot_bottom_height"]
++                            step_vec = vec * step_len
++                            if abs(step_vec[2]) < 1e-12:
++                                normal = np.array([0.0, 0.0, 1.0])
++                                vec = _reflect(vec, normal)
++                                candidate = pos + vec * step_len
++                            else:
++                                t = (bottom_z - pos[2]) / step_vec[2]
++                                t = max(0.0, min(1.0, t))
++                                intersect = pos + step_vec * t
++                                remain = step_len * (1.0 - t)
++                                normal = np.array([0.0, 0.0, 1.0])
++                                vec = _reflect(vec, normal)
++                                candidate = intersect + vec * remain
+                     pos = candidate
+                     traj.append(pos.copy())
  
-             if shape in ["cube", "ceros"]:
-                 new_IO_status, vertex_point = IO_check_cube(temp_position, constants)
-             elif shape == "drop":
-                 new_IO_status = IO_check_drop(temp_position, stick_status, constants)
-                 vertex_point = None
-                 if new_IO_status == IOStatus.BORDER:
-                     vec = temp_position - base_position
-                     vec_length = np.linalg.norm(vec)
-                     if vec_length > constants['limit']:
-                         adjusted_vec = vec * 0.99
-                         temp_position = base_position + adjusted_vec
-                         new_IO_status = IO_check_drop(temp_position, stick_status, constants)
-                     if new_IO_status == IOStatus.BORDER:
-                         raise RuntimeError("drop: rethink logic for border")
-             elif shape == "spot":
-                 prev_stat = self.prev_IO_status[j]
-                 if prev_stat is None:
-                     prev_stat = "none"
--                new_IO_status = IO_check_spot(base_position, temp_position, constants, prev_stat)
-+                new_IO_status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
-                 vertex_point = None
-                 if new_IO_status == IOStatus.BORDER:
-                     vec = temp_position - base_position
-                     vec_length = np.linalg.norm(vec)
-                     if vec_length > constants['limit']:
-                         adjusted_vec = vec * 0.99
-                         temp_position = base_position + adjusted_vec
--                        new_IO_status = IO_check_spot(base_position, temp_position, constants, prev_stat)
-+                        new_IO_status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
-                     if new_IO_status == IOStatus.BORDER:
-                         raise RuntimeError("rethink logic 3")
-             else:
-                 new_IO_status = "inside"
-                 vertex_point = None
-             prev_stat = self.prev_IO_status[j]
-             if prev_stat in [IOStatus.TEMP_ON_EDGE, IOStatus.TEMP_ON_SURFACE] and (stick_status > 0):
-                 if new_IO_status in [
-                     IOStatus.INSIDE,
-                     IOStatus.TEMP_ON_POLYGON,
-                     IOStatus.TEMP_ON_SURFACE,
-                     IOStatus.TEMP_ON_EDGE,
-                     IOStatus.SPOT_BOTTOM,
-             ]:
-                     new_IO_status = prev_stat
-                     vertex_point = None
-             IO_status = new_IO_status
-             self.prev_IO_status[j] = IO_status
-             if remaining_distance < 0:
-                 raise RuntimeError("rd<0")
-             if IO_status in [
-                 IOStatus.INSIDE,
-                 IOStatus.TEMP_ON_SURFACE,
-                 IOStatus.TEMP_ON_EDGE,
-                 IOStatus.SPOT_BOTTOM,
-diff --git a/spermsim/main.py b/spermsim/main.py
-index 3f2f5b5..b45893a 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -2224,33 +2228,33 @@ def main():
-     conn.close()
-     print(f"実行時間: {time.time() - start_time:.2f}秒")
+                     if rep == 0 and i == 0 and j == 0:
+                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
+ 
+                 self.trajectory.append(np.vstack(traj))
+ 
+         print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, "
+               f"step_len={step_len} mm")
  
  
- if __name__ == "__main__":
-     main()
  
+     import matplotlib.pyplot as plt
  
- def _detect_boundary(shape, base_position, temp_position, stick_status, constants, prev_stat):
-     """shape に応じて IOStatus と vertex_point を返す純粋関数
-     戻り値: (IOStatus, vertex_point, temp_position)
-     """
-     if shape in ("cube", "ceros"):
-         status, vertex = IO_check_cube(temp_position, constants)
-         return status, vertex, temp_position
+     def plot_trajectories(self, max_sperm=5, save_path=None):
+         """
+         インスタンスのself.trajectory（リスト of N×3 配列）を可視化
+         max_sperm: 表示する精子軌跡の最大本数
+         save_path: Noneなら画面表示のみ、パス指定で保存
+         """
+         import matplotlib.pyplot as plt
+         import numpy as np
+         import os
  
-     if shape == "drop":
-         status = IO_check_drop(temp_position, stick_status, constants)
-         if status == IOStatus.BORDER:
-             vec = temp_position - base_position
-             temp_position = base_position + vec * 0.99
-             status = IO_check_drop(temp_position, stick_status, constants)
-         return status, None, temp_position
- 
-     if shape == "spot":
--        status = IO_check_spot(base_position, temp_position, constants, prev_stat)
-+        status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
-         if status == IOStatus.BORDER:
-             vec = temp_position - base_position
-             temp_position = base_position + vec * 0.99
--            status = IO_check_spot(base_position, temp_position, constants, prev_stat)
-+            status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
-         return status, None, temp_position
- 
-     return IOStatus.INSIDE, None, temp_position
