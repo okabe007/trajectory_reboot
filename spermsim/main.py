@@ -23,8 +23,32 @@ import matplotlib.patches as patches
 import numpy as np
 import numpy.linalg as LA
 import pandas as pd
-from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
+
+
+def rotation_matrix_from_vectors(vec1, vec2):
+    """Return rotation matrix that rotates vec1 to vec2."""
+    a = np.array(vec1, dtype=float)
+    b = np.array(vec2, dtype=float)
+    a /= LA.norm(a) + 1e-12
+    b /= LA.norm(b) + 1e-12
+    v = np.cross(a, b)
+    c = np.dot(a, b)
+    s = LA.norm(v)
+    if s < 1e-12:
+        if c > 0:
+            return np.eye(3)
+        if abs(a[0]) < 0.9:
+            perp = np.array([1.0, 0.0, 0.0])
+        else:
+            perp = np.array([0.0, 1.0, 0.0])
+        v = np.cross(a, perp)
+        v /= LA.norm(v) + 1e-12
+        vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+        return -np.eye(3) + 2 * np.outer(v, v)
+    vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    rot = np.eye(3) + vx + vx @ vx * ((1 - c) / (s ** 2))
+    return rot
 
 # --- 派生変数一元計算モジュールをインポート ---
 from tools.derived_constants import calculate_derived_constants
@@ -1444,13 +1468,13 @@ class SpermSimulation:
                     cos_max = np.cos(max_angle)
                     z_ = np.random.uniform(cos_max, 1.0)
                     phi_ = np.random.uniform(0, 2*np.pi)
-                    sqrt_part = np.sqrt(1 - z_*z_)
+                    sqrt_part = np.sqrt(1 - z_ * z_)
                     x_local = sqrt_part * np.cos(phi_)
                     y_local = sqrt_part * np.sin(phi_)
                     z_local = z_
-                    rot = R.align_vectors([[0,0,1]], [axis])[0]
+                    rot = rotation_matrix_from_vectors([0, 0, 1], axis)
                     v_local = np.array([x_local, y_local, z_local])
-                    return rot.apply(v_local)
+                    return rot.dot(v_local)
                 center_axis = (plane_normal + sphere_normal_3d) / 2
                 center_axis_norm = np.linalg.norm(center_axis)
                 if center_axis_norm < constants['limit']:
