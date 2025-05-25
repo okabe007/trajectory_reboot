@@ -130,7 +130,10 @@ class SpermSimulation:
         seed_val         = self.constants.get("seed_number")
         if seed_val is not None and str(seed_val).lower() != "none":
             try:
-                rng = np.random.default_rng(int(seed_val))
+                seed_int = int(seed_val)
+                # --- 全ての乱数生成を同じシードで制御するため ---
+                np.random.seed(seed_int)
+                rng = np.random.default_rng(seed_int)
             except Exception:
                 rng = np.random.default_rng()
         else:
