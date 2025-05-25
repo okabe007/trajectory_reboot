@@ -1,176 +1,165 @@
-diff --git a/spermsim/main.py b/spermsim/main.py
-index 3f2f5b5..cba622c 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -495,50 +495,96 @@ def cut_and_bend_sphere(base_position, remaining_distance, temp_position, consta
-     )
-     oi_normalized, bi_normalized = compute_normalized_vectors(
-         base_position, intersection_point, constants
-     )
-     selected_tangent, normal_B = compute_tangent_vectors(oi_normalized, bi_normalized)
-     modify_angle = determine_rotation_direction(
-         selected_tangent, normal_B, bi_normalized, modify_angle
-     )
-     last_vec = rotate_vector(selected_tangent, normal_B, modify_angle)
-     last_vec_normalized = normalize_vector(last_vec)
-     last_vec = last_vec_normalized * remaining_distance
-     new_temp_position = intersection_point + last_vec
-     lv_dot = np.dot(last_vec, last_vec)
-     if abs(lv_dot) < constants['limit']:
-         inward_dir = np.array([0.0, 0.0, 0.0])
+diff --git a/core/simulation.py b/core/simulation.py
+index 7bf647d..3d810b6 100644
+--- a/core/simulation.py
++++ b/core/simulation.py
+@@ -67,50 +67,94 @@ def _egg_position(constants):
+         spot_r = constants.get("spot_r", 0)
+         spot_bottom_height = constants.get("spot_bottom_height", 0)
+         positions = {
+             "center": (0, 0, (spot_bottom_height + spot_r) / 2),
+             "bottom_center": (0, 0, spot_bottom_height + r),
+             "bottom_edge": (
+                 math.sqrt(max((spot_r - r) ** 2 - (spot_bottom_height + r) ** 2, 0)),
+                 0,
+                 spot_bottom_height + r,
+             ),
+         }
+     elif shape == "ceros":
+         cx = (constants["x_min"] + constants["x_max"]) / 2
+         cy = (constants["y_min"] + constants["y_max"]) / 2
+         cz = (constants["z_min"] + constants["z_max"]) / 2
+         positions = {"center": (cx, cy, cz), "bottom_center": (cx, cy, cz), "bottom_edge": (cx, cy, cz)}
      else:
-         t = - np.dot(intersection_point, last_vec) / lv_dot
-         F = intersection_point + t * last_vec
-         inward_dir = -F
-         norm_id = LA.norm(inward_dir)
-         if norm_id < constants['limit']:
-             inward_dir = np.array([0.0,0.0,0.0])
-         else:
-             inward_dir /= norm_id
-     return new_temp_position, intersection_point, remaining_distance, inward_dir
-+
-+def cut_and_bend_drop(base_position, remaining_distance, temp_position, constants):
-+    """Handle reflection for drop shape.
-+
-+    This mirrors :func:`cut_and_bend_sphere` but uses ``drop_r`` for the
-+    radius.  The resulting vector is rotated slightly inside the sphere so
-+    that the sperm keeps moving within the droplet after reflection.
-+    """
-+
-+    radius = constants['drop_r']
-+    modify_angle = constants['inner_angle']
-+
-+    intersection_point, remaining_distance = line_sphere_intersection(
-+        base_position, temp_position, radius, remaining_distance, constants
-+    )
-+
-+    oi_normalized, bi_normalized = compute_normalized_vectors(
-+        base_position, intersection_point, constants
-+    )
-+
-+    selected_tangent, normal_B = compute_tangent_vectors(oi_normalized, bi_normalized)
-+
-+    modify_angle = determine_rotation_direction(
-+        selected_tangent, normal_B, bi_normalized, modify_angle
-+    )
-+
-+    last_vec = rotate_vector(selected_tangent, normal_B, modify_angle)
-+    last_vec_normalized = normalize_vector(last_vec)
-+    last_vec = last_vec_normalized * remaining_distance
-+
-+    new_temp_position = intersection_point + last_vec
-+
-+    lv_dot = np.dot(last_vec, last_vec)
-+    if abs(lv_dot) < constants['limit']:
-+        inward_dir = np.array([0.0, 0.0, 0.0])
+         raise RuntimeError(f"Unknown shape '{shape}'")
+ 
+     if loc not in positions:
+         raise RuntimeError(f"Invalid egg_localization '{loc}' for shape '{shape}'")
+ 
+     return positions[loc]
+ 
+ 
++def _io_check_drop(position: np.ndarray, constants: dict) -> str:
++    """Return 'inside', 'border', or 'outside' for drop shape."""
++    r = constants.get("drop_r", 0.0)
++    limit = constants.get("limit", 1e-9)
++    dist = np.linalg.norm(position)
++    if dist > r + limit:
++        return "outside"
++    elif dist < r - limit:
++        return "inside"
 +    else:
-+        t = - np.dot(intersection_point, last_vec) / lv_dot
-+        F = intersection_point + t * last_vec
-+        inward_dir = -F
-+        norm_id = LA.norm(inward_dir)
-+        if norm_id < constants['limit']:
-+            inward_dir = np.array([0.0, 0.0, 0.0])
-+        else:
-+            inward_dir /= norm_id
++        return "border"
 +
-+    return new_temp_position, intersection_point, remaining_distance, inward_dir
- def _calculate_inward_dir_from_axes_hit(x, y, z, x_min, x_max, y_min, y_max, z_min, z_max, constants):
-     on_x_min = abs(x - x_min) <= constants['limit']
-     on_x_max = abs(x - x_max) <= constants['limit']
-     on_y_min = abs(y - y_min) <= constants['limit']
-     on_y_max = abs(y - y_max) <= constants['limit']
-     on_z_min = abs(z - z_min) <= constants['limit']
-     on_z_max = abs(z - z_max) <= constants['limit']
-     hit_count = sum([on_x_min, on_x_max, on_y_min, on_y_max, on_z_min, on_z_max])
-     pinned_coords = []
-     free_axes = []
-     if on_x_min:
-         pinned_coords.append(('x', x_min))
-     elif on_x_max:
-         pinned_coords.append(('x', x_max))
-     else:
-         free_axes.append('x')
-     if on_y_min:
-         pinned_coords.append(('y', y_min))
-     elif on_y_max:
-         pinned_coords.append(('y', y_max))
-     else:
-         free_axes.append('y')
-     if on_z_min:
-         pinned_coords.append(('z', z_min))
-     elif on_z_max:
-diff --git a/spermsim/main.py b/spermsim/main.py
-index 3f2f5b5..cba622c 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -1196,56 +1242,64 @@ class SpermSimulation:
-                 else:            
-                     self.trajectory[j, i] = temp_position
-                     base_position = self.trajectory[j, i]
-                     remaining_distance = constants['step_length']
-                     if stick_status > 0:
-                         stick_status -= 1
-                     if len(intersection_point) != 0:
-                         last_vec = temp_position - intersection_point
-                         intersection_point = np.array([])
-                     else:
-                         last_vec = self.trajectory[j, i] - self.trajectory[j, i - 1]
-                     if LA.norm(last_vec) < constants['limit']:
-                         raise RuntimeError("last vec is too short!")
-                     new_vec = prepare_new_vector(
-                         last_vec, constants,
-                         boundary_type="free",
-                         stick_status=stick_status,
-                         inward_dir=None
-                     )
-                     temp_position = self.trajectory[j, i] + new_vec
-                 i += 1
-                 continue
-             elif IO_status == IOStatus.SPHERE_OUT:
-                 if stick_status == 0:
-                     stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
--                new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_sphere(
--                    self.trajectory[j, i - 1],
--                    remaining_distance,
--                    temp_position,
--                    constants
--                )
-+                if shape == "drop":
-+                    new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_drop(
-+                        self.trajectory[j, i - 1],
-+                        remaining_distance,
-+                        temp_position,
-+                        constants,
-+                    )
-+                else:
-+                    new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_sphere(
-+                        self.trajectory[j, i - 1],
-+                        remaining_distance,
-+                        temp_position,
-+                        constants,
-+                    )
-                 base_position = intersection_point
-                 temp_position = new_temp_pos
-                 last_vec = temp_position - intersection_point
-                 continue
-             elif IO_status == IOStatus.POLYGON_MODE:
-                 self.trajectory[j, i] = temp_position
-                 base_position = self.trajectory[j, i]
-                 if len(intersection_point) != 0:
-                     last_vec = temp_position - intersection_point
-                     intersection_point = np.array([])
-                 else:
-                     last_vec = self.trajectory[j, i] - self.trajectory[j, i - 1]
-                 new_temp_position, new_last_vec, updated_stick, next_state = self.bottom_edge_mode(
-                     base_position, last_vec, stick_status, constants
-                 )
-                 temp_position = new_temp_position
-                 last_vec = new_last_vec
-                 stick_status = updated_stick
-                 i += 1
-                 IO_status = next_state
-                 continue
-             elif IO_status == IOStatus.SPOT_EDGE_OUT:
-                 if stick_status == 0:
-                     stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
-                 (new_temp_pos,
++
++def _line_sphere_intersection(p0: np.ndarray, p1: np.ndarray, r: float) -> tuple[np.ndarray, float]:
++    """Return intersection point and remaining distance after hitting the sphere."""
++    d = p1 - p0
++    d_norm = np.linalg.norm(d)
++    if d_norm < 1e-12:
++        return p0.copy(), 0.0
++    d_unit = d / d_norm
++    f = p0
++    a = 1.0
++    b = 2.0 * float(f @ d_unit)
++    c = float(f @ f) - r * r
++    disc = b * b - 4 * a * c
++    if disc < 0:
++        return p0.copy(), 0.0
++    sqrt_disc = math.sqrt(disc)
++    t1 = (-b - sqrt_disc) / (2 * a)
++    t2 = (-b + sqrt_disc) / (2 * a)
++    t_candidates = [t for t in (t1, t2) if t >= 0]
++    if not t_candidates:
++        return p0.copy(), 0.0
++    t = min(t_candidates)
++    intersection = p0 + d_unit * t
++    remaining = max(d_norm - t, 0.0)
++    return intersection, remaining
++
++
++def _reflect(vec: np.ndarray, normal: np.ndarray) -> np.ndarray:
++    """Reflect ``vec`` on plane defined by ``normal``."""
++    return vec - 2.0 * np.dot(vec, normal) * normal
++
++
+ class SpermSimulation:
+     def __init__(self, constants):
+         self.constants = constants
+ 
+         # --- 型安全化：数値パラメータはfloat/intに変換 ---
+         float_keys = [
+             "spot_angle", "vol", "sperm_conc", "vsl", "deviation", "surface_time",
+             "gamete_r", "sim_min", "sampl_rate_hz"
+         ]
+         int_keys = [
+             "sim_repeat"
+         ]
+         for key in float_keys:
+             if key in self.constants and not isinstance(self.constants[key], float):
+                 try:
+                     self.constants[key] = float(self.constants[key])
+                 except Exception:
+                     print(f"[WARNING] {key} = {self.constants[key]} をfloat変換できませんでした")
+         for key in int_keys:
+             if key in self.constants and not isinstance(self.constants[key], int):
+                 try:
+                     self.constants[key] = int(float(self.constants[key]))
+                 except Exception:
+                     print(f"[WARNING] {key} = {self.constants[key]} をint変換できませんでした")
+         # shape, egg_localization, などはstr型のままでOK
+diff --git a/core/simulation.py b/core/simulation.py
+index 7bf647d..3d810b6 100644
+--- a/core/simulation.py
++++ b/core/simulation.py
+@@ -159,52 +203,59 @@ class SpermSimulation:
+                 seed_int = int(seed_val)
+                 # --- 全ての乱数生成を同じシードで制御するため ---
+                 np.random.seed(seed_int)
+                 rng = np.random.default_rng(seed_int)
+             except Exception:
+                 rng = np.random.default_rng()
+         else:
+             rng = np.random.default_rng()
+ 
+         self.trajectory = []   # ← 毎 run() でリセット
+ 
+         # ---- ループ ---------------------------------------------------
+         for rep in range(int(sim_repeat)):
+             for i in range(number_of_sperm):
+ 
+                 pos = shape_obj.initial_position()     # mm
+                 traj = [pos.copy()]
+ 
+                 # 初期方向
+                 vec = rng.normal(size=3)
+                 vec /= np.linalg.norm(vec) + 1e-12
+ 
+                 for j in range(number_of_steps):
+                     if j > 0:
+                         vec = _perturb_direction(vec, self.constants["deviation"], rng)
+-
+-                    pos = pos + vec * step_len         # ★ mm 単位で更新
++                    candidate = pos + vec * step_len
++                    if shape == "drop":
++                        status = _io_check_drop(candidate, self.constants)
++                        if status == "outside":
++                            intersect, remain = _line_sphere_intersection(pos, candidate, self.constants["drop_r"])
++                            normal = intersect / (np.linalg.norm(intersect) + 1e-12)
++                            vec = _reflect(vec, normal)
++                            candidate = intersect + vec * remain
++                    pos = candidate
+                     traj.append(pos.copy())
+ 
+                     if rep == 0 and i == 0 and j == 0:
+                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
+ 
+                 self.trajectory.append(np.vstack(traj))
+ 
+         print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, "
+               f"step_len={step_len} mm")
+ 
+ 
+ 
+     import matplotlib.pyplot as plt
+ 
+     def plot_trajectories(self, max_sperm=5, save_path=None):
+         """
+         インスタンスのself.trajectory（リスト of N×3 配列）を可視化
+         max_sperm: 表示する精子軌跡の最大本数
+         save_path: Noneなら画面表示のみ、パス指定で保存
+         """
+         import matplotlib.pyplot as plt
+         import numpy as np
+         import os
+ 
+         trajectories = np.array(self.trajectory)
