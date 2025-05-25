@@ -102,6 +102,24 @@ def _io_check_drop(position: np.ndarray, constants: dict) -> str:
         return "border"
 
 
+def _io_check_spot(position: np.ndarray, constants: dict) -> str:
+    """Return 'inside', 'outside', or 'bottom' for spot shape."""
+    r = constants.get("spot_r", 0.0)
+    bottom_z = constants.get("spot_bottom_height", 0.0)
+    bottom_r = constants.get("spot_bottom_r", 0.0)
+    limit = constants.get("limit", 1e-9)
+
+    if position[2] < bottom_z - limit:
+        # below the bottom plane
+        if np.linalg.norm(position[:2]) <= bottom_r + limit:
+            return "bottom"
+        # fall through to outside check on sphere
+
+    if np.linalg.norm(position) > r + limit:
+        return "outside"
+    return "inside"
+
+
 def _line_sphere_intersection(p0: np.ndarray, p1: np.ndarray, r: float) -> tuple[np.ndarray, float]:
     """Return intersection point and remaining distance after hitting the sphere."""
     d = p1 - p0
@@ -229,10 +247,36 @@ class SpermSimulation:
                     if shape == "drop":
                         status = _io_check_drop(candidate, self.constants)
                         if status == "outside":
-                            intersect, remain = _line_sphere_intersection(pos, candidate, self.constants["drop_r"])
+                            intersect, remain = _line_sphere_intersection(
+                                pos, candidate, self.constants["drop_r"]
+                            )
                             normal = intersect / (np.linalg.norm(intersect) + 1e-12)
                             vec = _reflect(vec, normal)
                             candidate = intersect + vec * remain
+                    elif shape == "spot":
+                        status = _io_check_spot(candidate, self.constants)
+                        if status == "outside":
+                            intersect, remain = _line_sphere_intersection(
+                                pos, candidate, self.constants["spot_r"]
+                            )
+                            normal = intersect / (np.linalg.norm(intersect) + 1e-12)
+                            vec = _reflect(vec, normal)
+                            candidate = intersect + vec * remain
+                        elif status == "bottom":
+                            bottom_z = self.constants["spot_bottom_height"]
+                            step_vec = vec * step_len
+                            if abs(step_vec[2]) < 1e-12:
+                                normal = np.array([0.0, 0.0, 1.0])
+                                vec = _reflect(vec, normal)
+                                candidate = pos + vec * step_len
+                            else:
+                                t = (bottom_z - pos[2]) / step_vec[2]
+                                t = max(0.0, min(1.0, t))
+                                intersect = pos + step_vec * t
+                                remain = step_len * (1.0 - t)
+                                normal = np.array([0.0, 0.0, 1.0])
+                                vec = _reflect(vec, normal)
+                                candidate = intersect + vec * remain
                     pos = candidate
                     traj.append(pos.copy())
 
