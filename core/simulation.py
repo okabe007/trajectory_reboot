@@ -325,3 +325,61 @@ class SpermSimulation:
         plt.savefig(save_path)
         plt.close()
         print(f"[INFO] 軌跡画像を保存しました: {save_path}")
+
+    def plot_movie_trajectories(self, save_path=None):
+        """Save an animation of the XY trajectories."""
+        from matplotlib.animation import FuncAnimation
+        import numpy as np
+
+        if not self.trajectory:
+            print("[WARNING] 軌跡データがありません。run()実行後にplot_movie_trajectoriesしてください。")
+            return None
+
+        traj = np.array(self.trajectory)
+        n_sperm, n_steps, _ = traj.shape
+
+        x_min = traj[:, :, 0].min()
+        x_max = traj[:, :, 0].max()
+        y_min = traj[:, :, 1].min()
+        y_max = traj[:, :, 1].max()
+
+        fig, ax = plt.subplots()
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_title("XY Trajectory Animation")
+
+        lines = [ax.plot([], [], lw=1)[0] for _ in range(n_sperm)]
+
+        def init():
+            for line in lines:
+                line.set_data([], [])
+            return lines
+
+        def animate(i):
+            for line, t in zip(lines, traj):
+                line.set_data(t[: i + 1, 0], t[: i + 1, 1])
+            return lines
+
+        anim = FuncAnimation(fig, animate, init_func=init, frames=n_steps, interval=200, blit=True)
+
+        if save_path is None:
+            base_dir = os.path.dirname(__file__)
+            out_dir = os.path.join(base_dir, "figs_and_movies")
+            os.makedirs(out_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = os.path.join(out_dir, f"trajectory_{timestamp}.mp4")
+
+        try:
+            anim.save(save_path, writer="ffmpeg", codec="mpeg4", fps=5)
+        except Exception as e:
+            print(f"[WARN] ffmpeg保存失敗 ({e}) → pillow writerで再試行")
+            try:
+                anim.save(save_path, writer="pillow", fps=5)
+            except Exception as e2:
+                print(f"[ERROR] pillow writerでも保存に失敗: {e2}")
+
+        plt.close(fig)
+        print(f"[INFO] 動画を保存しました: {save_path}")
+        return save_path
