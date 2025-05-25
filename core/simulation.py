@@ -195,19 +195,18 @@ class SpermSimulation:
         n_sperm = min(len(trajectories), max_sperm)
 
         # --- draw egg position ---
-        if constants.get("shape", "cube").lower() != "ceros":
-            egg_x, egg_y, egg_z = _egg_position(constants)
-            for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
-                ax.add_patch(
-                    patches.Circle(
-                        (x, y),
-                        radius=constants.get("gamete_r", 0),
-                        facecolor="yellow",
-                        alpha=0.8,
-                        ec="gray",
-                        linewidth=1.0,
-                    )
+        egg_x, egg_y, egg_z = _egg_position(constants)
+        for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
+            ax.add_patch(
+                patches.Circle(
+                    (x, y),
+                    radius=constants.get("gamete_r", 0),
+                    facecolor="yellow",
+                    alpha=0.8,
+                    ec="gray",
+                    linewidth=1.0,
                 )
+            )
 
         # XY投影
         for i in range(n_sperm):
