@@ -370,6 +370,10 @@ class SimApp(tk.Tk):
             limit=1e-9,
         )
 
+        # --- シミュレーションステップ数を sim_min と sampl_rate_hz から計算 ---
+        sim_min = float(self.config_data.get("sim_min", 0.0))
+        self.config_data["number_of_steps"] = int(sim_min * 60 * hz)
+
         # --- ④ 派生値計算（互換性用） ---------------------------------
         self.config_data = calculate_derived_constants(self.config_data)
 
