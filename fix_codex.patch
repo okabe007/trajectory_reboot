@@ -1,114 +1,102 @@
-diff --git a/core/simulation.py b/core/simulation.py
-index a9a9df0..5ffb863 100644
---- a/core/simulation.py
-+++ b/core/simulation.py
-@@ -167,51 +167,51 @@ class SpermSimulation:
-     import matplotlib.pyplot as plt
- 
-     def plot_trajectories(self, max_sperm=5, save_path=None):
-         """
-         インスタンスのself.trajectory（リスト of N×3 配列）を可視化
-         max_sperm: 表示する精子軌跡の最大本数
-         save_path: Noneなら画面表示のみ、パス指定で保存
-         """
-         import matplotlib.pyplot as plt
-         import numpy as np
-         import os
- 
-         trajectories = np.array(self.trajectory)
-         constants = self.constants
- 
-         if trajectories is None or len(trajectories) == 0:
-             print("[WARNING] 軌跡データがありません。run()実行後にplot_trajectoriesしてください。")
-             return
- 
-         # --- 軸幅の統一 ---
-         all_mins = [constants["x_min"], constants["y_min"], constants["z_min"]]
-         all_maxs = [constants["x_max"], constants["y_max"], constants["z_max"]]
-         global_min = min(all_mins)
-         global_max = max(all_maxs)
- 
--        fig, axes = plt.subplots(1, 3, figsize=(15, 6))
-+        fig, axes = plt.subplots(1, 3, figsize=(10, 4))
-         ax_xy, ax_xz, ax_yz = axes
-         colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
-         n_sperm = min(len(trajectories), max_sperm)
- 
-         # --- draw egg position ---
-         if constants.get("shape", "cube").lower() != "ceros":
-             egg_x, egg_y, egg_z = _egg_position(constants)
-             for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
-                 ax.add_patch(
-                     patches.Circle(
-                         (x, y),
-                         radius=constants.get("gamete_r", 0),
-                         facecolor="yellow",
-                         alpha=0.8,
-                         ec="gray",
-                         linewidth=1.0,
-                     )
-                 )
- 
-         # XY投影
-         for i in range(n_sperm):
-             ax_xy.plot(trajectories[i][:,0], trajectories[i][:,1], color=colors[i % len(colors)])
-         ax_xy.set_xlim(global_min, global_max)
-         ax_xy.set_ylim(global_min, global_max)
-         ax_xy.set_aspect('equal')
-diff --git a/core/simulation.py b/core/simulation.py
-index a9a9df0..5ffb863 100644
---- a/core/simulation.py
-+++ b/core/simulation.py
-@@ -261,51 +261,51 @@ class SpermSimulation:
-         fig.suptitle(f"{param_summary}\n{param_summary2}", fontsize=12)
-         plt.tight_layout(rect=[0, 0, 1, 0.95])
-         if save_path is not None:
-             os.makedirs(os.path.dirname(save_path), exist_ok=True)
-             plt.savefig(save_path)
-             plt.close()
-         else:
+diff --git a/spermsim/main.py b/spermsim/main.py
+index df4e820..bc61b85 100644
+--- a/spermsim/main.py
++++ b/spermsim/main.py
+@@ -1541,95 +1541,95 @@ class SpermPlot:
+             for ax in axes:
+                 ax.add_patch(patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1))
+         elif shape == 'cube':
+             pass
+ class SpermTrajectoryVisualizer:
+     def __init__(self, simulation):
+         self.simulation = simulation
+         self.constants = self.simulation.constants
+         self.sperm_plot = SpermPlot(self.simulation)
+         (
+             egg_x, egg_y, egg_z,
+             e_x_min, e_y_min, e_z_min,
+             e_x_max, e_y_max, e_z_max,
+             egg_center, egg_position_4d
+         ) = placement_of_eggs(self.constants)
+         self.egg_center = np.array([egg_x, egg_y, egg_z])
+         self.egg_radius = self.constants['gamete_r']
+     def animate_trajectory(self):
+         if self.constants.get("make_movie", "no").lower() != "yes":
+             return None
+         shape = self.constants.get("shape", "spot")
+         num_sperm = self.simulation.number_of_sperm
+         n_sim = self.simulation.number_of_steps
+         if shape == "ceros":
+             plt.ion()
+-            fig, ax = plt.subplots()
++            fig, ax = plt.subplots(figsize=(10, 4))
+             ax.set_xlim(-0.815, 0.815)
+             ax.set_ylim(-0.62, 0.62)
+             ax.set_aspect('equal', adjustable='box')
+             ax.set_xlabel("X")
+             ax.set_ylabel("Y")
+             ax.set_title("CEROS 2D Animation (Zoomed)")
+             lines = [ax.plot([], [], lw=2)[0] for _ in range(num_sperm)]
+             def init():
+                 for line in lines:
+                     line.set_data([], [])
+                 return lines
+             def animate(i):
+                 if i % 10 == 0:
+                     percentage = (i / (n_sim - 1)) * 100
+                     print(f"Progress: {percentage:.2f}%")
+                 for j, line in enumerate(lines):
+                     base_pos = self.simulation.trajectory[j, i]
+                     end_pos  = self.simulation.trajectory[j, i + 1]
+                     xdata = [base_pos[0], end_pos[0]]
+                     ydata = [base_pos[1], end_pos[1]]
+                     line.set_data(xdata, ydata)
+                     line.set_color(self.simulation.vec_colors[j, i])
+                     line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
+                 return lines
+             anim = FuncAnimation(
+                 fig,
+                 animate,
+                 init_func=init,
+                 frames=n_sim - 1,
+                 interval=180,
+                 blit=False
+             )
+             output_folder = MOV_DIR                                             
+             os.makedirs(output_folder, exist_ok=True)
+             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+             mov_filename = f"sperm_simulation_ceros_{timestamp}.mp4"
+             output_path = os.path.join(output_folder, mov_filename)
+             _safe_anim_save(anim, output_path)                                        
+             print(f"{output_path}")
              plt.show()
- 
- 
-     # def plot_trajectories(self, max_sperm=5, save_path=None):
-         """
-         シミュレーションで記録したself.trajectory（リスト of N×3 配列）を可視化します。
-         max_sperm: 表示する精子軌跡の最大本数
-         save_path: Noneならこのスクリプトと同じ階層のFigs_and_Moviesに自動保存
-         """
-         trajectories = self.trajectory  # run()でセットされているはず
-         if not trajectories or len(trajectories) == 0:
-             print("[WARNING] 軌跡データがありません。run()実行後にplot_trajectoriesしてください。")
-             return
- 
-         # 描画本数を制限
-         n_plot = min(max_sperm, len(trajectories))
-         perc_shown = n_plot / len(trajectories) * 100
- 
--        fig, axes = plt.subplots(1, 3, figsize=(16, 5))  # XY, XZ, YZ
-+        fig, axes = plt.subplots(1, 3, figsize=(10, 4))  # XY, XZ, YZ
-         ax_labels = [("X", "Y"), ("X", "Z"), ("Y", "Z")]
-         idxs = [(0, 1), (0, 2), (1, 2)]
- 
-         for ax, (label_x, label_y), (i, j) in zip(axes, ax_labels, idxs):
-             for t in trajectories[:n_plot]:
-                 ax.plot(t[:, i], t[:, j], alpha=0.7)
-             ax.set_xlabel(label_x)
-             ax.set_ylabel(label_y)
-             ax.set_aspect('equal')
-             ax.set_title(f"{label_x}{label_y} projection")
- 
-         # suptitleにパラメータ2行分
-         param_summary = ', '.join(f"{k}={self.constants.get(k)}" for k in ["shape", "vol", "sperm_conc", "vsl", "deviation"])
-         param_summary2 = ', '.join(f"{k}={self.constants.get(k)}" for k in ["surface_time", "egg_localization", "gamete_r", "sim_min", "sampl_rate_hz", "sim_repeat"])
-         fig.suptitle(f"{param_summary}\n{param_summary2}", fontsize=12)
- 
-         # 本数注釈
-         fig.text(0.99, 0.01, f"※ 表示は全体の{perc_shown:.1f}%（{n_plot}本/{len(trajectories)}本）", ha='right', fontsize=10, color="gray")
- 
-         fig.tight_layout(rect=[0, 0.03, 1, 0.92])
- 
-         # --- 保存先パスをスクリプトの場所基準で作る ---
-         import datetime
-         dtstr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
- 
+             return output_path
+         else:
+             plt.ion()
+-            fig = plt.figure()
++            fig = plt.figure(figsize=(10, 4))
+             ax = fig.add_subplot(111, projection='3d')
+             merged_events = self.simulation.merge_contact_events()
+             contacts_count = len(merged_events)
+             if self.constants["sim_min"] > 0:
+                 contacts_per_hour = contacts_count / (self.constants["sim_min"] / 60)
+             else:
+                 contacts_per_hour = 0
+             title_str_3d = (
+                 f"vol: {self.constants['volume']} μl, "
+                 f"conc: {self.constants['sperm_conc']}/ml, "
+                 f"vsl: {self.constants['vsl']} mm, "
+                 f"sampling: {self.constants['sampl_rate_hz']} Hz,\n"
+                 f"dev: {self.constants['deviation']}, "
+                 f"stick: {self.constants['stick_sec']} sec,\n"
+                 f"sperm/egg interaction: {contacts_count} during {self.constants['sim_min']} min, "
+                 f"egg: {self.constants['egg_localization']}, "
+             )
+             if shape == "spot":
+                 title_str_3d += f"spot_angle: {self.constants.get('spot_angle', 'N/A')} degree"
+             fig.suptitle(title_str_3d, fontsize=8, y=0.93)
+             egg_u = np.linspace(0, 2 * np.pi, 50)
+             egg_v = np.linspace(0, np.pi, 50)
+             ex = (
+                 self.egg_center[0]
+                 + self.egg_radius * np.outer(np.cos(egg_u), np.sin(egg_v))

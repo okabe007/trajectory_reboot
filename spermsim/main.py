@@ -1522,7 +1522,7 @@ class SpermTrajectoryVisualizer:
         n_sim = self.simulation.number_of_steps
         if shape == "ceros":
             plt.ion()
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=(10, 4))
             ax.set_xlim(-0.815, 0.815)
             ax.set_ylim(-0.62, 0.62)
             ax.set_aspect('equal', adjustable='box')
@@ -1566,7 +1566,7 @@ class SpermTrajectoryVisualizer:
             return output_path
         else:
             plt.ion()
-            fig = plt.figure()
+            fig = plt.figure(figsize=(10, 4))
             ax = fig.add_subplot(111, projection='3d')
             merged_events = self.simulation.merge_contact_events()
             contacts_count = len(merged_events)
