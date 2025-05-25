@@ -1,0 +1,6 @@
+
+#!/bin/bash
+
+echo "[INFO] Installing Python dependencies..."
+pip install -r requirements.txt
+

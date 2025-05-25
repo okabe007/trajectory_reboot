@@ -355,3 +355,68 @@ class SpermSimulation:
         plt.savefig(save_path)
         plt.close()
         print(f"[INFO] 軌跡画像を保存しました: {save_path}")
+
+    def plot_movie_trajectories(self, save_path=None, fps: int = 5):
+        """Animate recorded trajectories and save to a movie file."""
+        import numpy as np
+        from matplotlib.animation import FuncAnimation
+
+        trajectories = np.array(self.trajectory)
+        if trajectories is None or len(trajectories) == 0:
+            print("[WARNING] 軌跡データがありません。run()実行後にplot_movie_trajectoriesしてください。")
+            return None
+
+        n_sperm, n_frames, _ = trajectories.shape
+
+        fig = plt.figure(figsize=(6, 6))
+        ax = fig.add_subplot(111, projection="3d")
+
+        const = self.constants
+        ax.set_xlim(const["x_min"], const["x_max"])
+        ax.set_ylim(const["y_min"], const["y_max"])
+        ax.set_zlim(const["z_min"], const["z_max"])
+        ax.set_box_aspect([
+            const["x_max"] - const["x_min"],
+            const["y_max"] - const["y_min"],
+            const["z_max"] - const["z_min"],
+        ])
+
+        lines = [ax.plot([], [], [], lw=1)[0] for _ in range(n_sperm)]
+
+        def init():
+            for ln in lines:
+                ln.set_data([], [])
+                ln.set_3d_properties([])
+            return lines
+
+        def update(frame):
+            for i, ln in enumerate(lines):
+                ln.set_data(trajectories[i, : frame + 1, 0], trajectories[i, : frame + 1, 1])
+                ln.set_3d_properties(trajectories[i, : frame + 1, 2])
+            return lines
+
+        anim = FuncAnimation(fig, update, init_func=init, frames=n_frames, interval=1000 / fps, blit=False)
+
+        base_dir = os.path.dirname(__file__)
+        mov_dir = os.path.join(base_dir, "figs_and_movies")
+        os.makedirs(mov_dir, exist_ok=True)
+        if save_path is None:
+            dtstr = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = os.path.join(mov_dir, f"trajectory_{dtstr}.mp4")
+        else:
+            filename = os.path.basename(save_path)
+            save_path = os.path.join(mov_dir, filename)
+
+        try:
+            anim.save(save_path, writer="ffmpeg", fps=fps)
+        except Exception as e:
+            print(f"[WARN] ffmpeg保存失敗 ({e}) → pillow writerで再試行")
+            try:
+                anim.save(save_path, writer="pillow", fps=fps)
+            except Exception as e2:
+                print(f"[ERROR] pillow writerでも保存に失敗: {e2}")
+                return None
+
+        plt.close(fig)
+        print(f"[INFO] 動画を保存しました: {save_path}")
+        return save_path
