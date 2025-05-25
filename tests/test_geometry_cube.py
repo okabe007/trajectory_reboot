@@ -18,7 +18,7 @@ from core.geometry import CubeShape
 
 def test_edge_length_basic():
     """体積 1.0 µm³ → 一辺 1.0 µm になるか"""
-    cube = CubeShape(vol_um3=1.0)
+    cube = CubeShape({"vol_um3": 1.0})  # ✅ 修正点
     assert math.isclose(cube.edge_um, 1.0, rel_tol=0, abs_tol=1e-12)
 
 
@@ -27,6 +27,6 @@ def test_edge_length_random():
     rng = np.random.default_rng(42)
     vols = rng.uniform(0.1, 1000.0, size=5)  # 0.1〜1000 µm³
     for v in vols:
-        cube = CubeShape(vol_um3=v)
+        cube = CubeShape({"vol_um3": v})  # ✅ 修正点
         expect = v ** (1.0 / 3.0)
         assert math.isclose(cube.edge_um, expect, rel_tol=1e-12)
