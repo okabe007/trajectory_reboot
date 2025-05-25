@@ -1,79 +1,48 @@
 diff --git a/core/simulation.py b/core/simulation.py
-index a9a9df0..5d1cfa4 100644
+index a9a9df0..2a5f3ac 100644
 --- a/core/simulation.py
 +++ b/core/simulation.py
-@@ -173,63 +173,62 @@ class SpermSimulation:
-         save_path: Noneなら画面表示のみ、パス指定で保存
-         """
-         import matplotlib.pyplot as plt
-         import numpy as np
-         import os
+@@ -1,42 +1,42 @@
  
-         trajectories = np.array(self.trajectory)
-         constants = self.constants
+ import numpy as np
+ import matplotlib.pyplot as plt
+ from matplotlib import patches
+ from datetime import datetime
+ import math
+ import os
+ from tools.plot_utils import plot_2d_trajectories
+ from core.geometry import CubeShape, DropShape, SpotShape, CerosShape
+ from tools.derived_constants import calculate_derived_constants
  
-         if trajectories is None or len(trajectories) == 0:
-             print("[WARNING] 軌跡データがありません。run()実行後にplot_trajectoriesしてください。")
-             return
  
-         # --- 軸幅の統一 ---
-         all_mins = [constants["x_min"], constants["y_min"], constants["z_min"]]
-         all_maxs = [constants["x_max"], constants["y_max"], constants["z_max"]]
-         global_min = min(all_mins)
-         global_max = max(all_maxs)
+ def _egg_position(constants):
+     """Return (egg_x, egg_y, egg_z) according to shape and localization."""
+     shape = constants.get("shape", "cube").lower()
+     loc = constants.get("egg_localization", "center")
+-    r = constants.get("gamete_r", 0)
++    r = constants["gamete_r"]
  
-         fig, axes = plt.subplots(1, 3, figsize=(15, 6))
-         ax_xy, ax_xz, ax_yz = axes
-         colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
-         n_sperm = min(len(trajectories), max_sperm)
- 
-         # --- draw egg position ---
--        if constants.get("shape", "cube").lower() != "ceros":
--            egg_x, egg_y, egg_z = _egg_position(constants)
--            for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
--                ax.add_patch(
--                    patches.Circle(
--                        (x, y),
--                        radius=constants.get("gamete_r", 0),
--                        facecolor="yellow",
--                        alpha=0.8,
--                        ec="gray",
--                        linewidth=1.0,
--                    )
-+        egg_x, egg_y, egg_z = _egg_position(constants)
-+        for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
-+            ax.add_patch(
-+                patches.Circle(
-+                    (x, y),
-+                    radius=constants.get("gamete_r", 0),
-+                    facecolor="yellow",
-+                    alpha=0.8,
-+                    ec="gray",
-+                    linewidth=1.0,
-                 )
-+            )
- 
-         # XY投影
-         for i in range(n_sperm):
-             ax_xy.plot(trajectories[i][:,0], trajectories[i][:,1], color=colors[i % len(colors)])
-         ax_xy.set_xlim(global_min, global_max)
-         ax_xy.set_ylim(global_min, global_max)
-         ax_xy.set_aspect('equal')
-         ax_xy.set_xlabel("X")
-         ax_xy.set_ylabel("Y")
-         ax_xy.set_title("XY projection")
- 
-         # XZ投影
-         for i in range(n_sperm):
-             ax_xz.plot(trajectories[i][:,0], trajectories[i][:,2], color=colors[i % len(colors)])
-         ax_xz.set_xlim(global_min, global_max)
-         ax_xz.set_ylim(global_min, global_max)
-         ax_xz.set_aspect('equal')
-         ax_xz.set_xlabel("X")
-         ax_xz.set_ylabel("Z")
-         ax_xz.set_title("XZ projection")
- 
-         # YZ投影
-         for i in range(n_sperm):
-             ax_yz.plot(trajectories[i][:,1], trajectories[i][:,2], color=colors[i % len(colors)])
-         ax_yz.set_xlim(global_min, global_max)
+     if shape == "cube":
+         positions = {
+             "center": (0, 0, 0),
+             "bottom_center": (0, 0, constants["z_min"] + r),
+             "bottom_side": (
+                 constants["x_min"] / 2 + r,
+                 constants["y_min"] / 2 + r,
+                 constants["z_min"] + r,
+             ),
+             "bottom_corner": (
+                 constants["x_min"] + r,
+                 constants["y_min"] + r,
+                 constants["z_min"] + r,
+             ),
+         }
+     elif shape == "drop":
+         drop_r = constants["drop_r"]
+         positions = {
+             "center": (0, 0, 0),
+             "bottom_center": (0, 0, -drop_r + r),
+         }
+     elif shape == "spot":
+         spot_r = constants.get("spot_r", 0)
+         spot_bottom_height = constants.get("spot_bottom_height", 0)

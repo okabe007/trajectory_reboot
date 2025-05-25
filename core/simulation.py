@@ -14,7 +14,7 @@ def _egg_position(constants):
     """Return (egg_x, egg_y, egg_z) according to shape and localization."""
     shape = constants.get("shape", "cube").lower()
     loc = constants.get("egg_localization", "center")
-    r = constants.get("gamete_r", 0)
+    r = constants["gamete_r"]
 
     if shape == "cube":
         positions = {
