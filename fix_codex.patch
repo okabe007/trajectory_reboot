@@ -1,23 +1,76 @@
 diff --git a/core/simulation.py b/core/simulation.py
-index a9a9df0..c0ce986 100644
+index a9a9df0..4f028af 100644
 --- a/core/simulation.py
 +++ b/core/simulation.py
-@@ -108,51 +108,54 @@ class SpermSimulation:
-         座標・距離の単位は **mm** で統一。
-         """
-         # ---- デバッグ：派生値確認 -------------------------------------
-         print("[DEBUG] SpermSimulation パラメータ:", self.constants)
+@@ -1,37 +1,63 @@
  
-         # ---- 形状オブジェクト生成 -------------------------------------
-         shape = self.constants.get("shape", "cube")
-         if shape == "cube":
-             shape_obj = CubeShape(self.constants)
-         elif shape == "spot":
-             shape_obj = SpotShape(self.constants)
-         elif shape == "drop":
-             shape_obj = DropShape(self.constants)
-         elif shape == "ceros":
-             shape_obj = CerosShape(self.constants)
+ import numpy as np
+ import matplotlib.pyplot as plt
+ from matplotlib import patches
+ from datetime import datetime
+ import math
+ import os
+ from tools.plot_utils import plot_2d_trajectories
+ from core.geometry import CubeShape, DropShape, SpotShape, CerosShape
+ from tools.derived_constants import calculate_derived_constants
+ 
+ 
++def _make_local_basis(forward: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
++    """Return two unit vectors orthogonal to ``forward``."""
++    f = forward / (np.linalg.norm(forward) + 1e-12)
++    if abs(f[0]) < 0.9:
++        base = np.array([1.0, 0.0, 0.0])
++    else:
++        base = np.array([0.0, 1.0, 0.0])
++    y = np.cross(f, base)
++    y /= np.linalg.norm(y) + 1e-12
++    x = np.cross(y, f)
++    return x, y
++
++
++def _perturb_direction(prev: np.ndarray, deviation: float, rng: np.random.Generator) -> np.ndarray:
++    """Return a unit vector deviated from ``prev``."""
++    lx, ly = _make_local_basis(prev)
++    theta = rng.normal(0.0, deviation)
++    phi = rng.uniform(-np.pi, np.pi)
++    new_dir = (
++        np.cos(theta) * prev
++        + np.sin(theta) * (np.cos(phi) * lx + np.sin(phi) * ly)
++    )
++    new_dir /= np.linalg.norm(new_dir) + 1e-12
++    return new_dir
++
++
+ def _egg_position(constants):
+     """Return (egg_x, egg_y, egg_z) according to shape and localization."""
+     shape = constants.get("shape", "cube").lower()
+     loc = constants.get("egg_localization", "center")
+     r = constants.get("gamete_r", 0)
+ 
+     if shape == "cube":
+         positions = {
+             "center": (0, 0, 0),
+             "bottom_center": (0, 0, constants["z_min"] + r),
+             "bottom_side": (
+                 constants["x_min"] / 2 + r,
+                 constants["y_min"] / 2 + r,
+                 constants["z_min"] + r,
+             ),
+             "bottom_corner": (
+                 constants["x_min"] + r,
+                 constants["y_min"] + r,
+                 constants["z_min"] + r,
+             ),
+         }
+     elif shape == "drop":
+         drop_r = constants["drop_r"]
+         positions = {
+             "center": (0, 0, 0),
+diff --git a/core/simulation.py b/core/simulation.py
+index a9a9df0..4f028af 100644
+--- a/core/simulation.py
++++ b/core/simulation.py
+@@ -123,59 +149,61 @@ class SpermSimulation:
          else:
              raise ValueError(f"Unsupported shape: {shape}")
  
@@ -28,11 +81,7 @@ index a9a9df0..c0ce986 100644
          seed_val         = self.constants.get("seed_number")
          if seed_val is not None and str(seed_val).lower() != "none":
              try:
--                rng = np.random.default_rng(int(seed_val))
-+                seed_int = int(seed_val)
-+                # --- 全ての乱数生成を同じシードで制御するため ---
-+                np.random.seed(seed_int)
-+                rng = np.random.default_rng(seed_int)
+                 rng = np.random.default_rng(int(seed_val))
              except Exception:
                  rng = np.random.default_rng()
          else:
@@ -47,14 +96,43 @@ index a9a9df0..c0ce986 100644
                  pos = shape_obj.initial_position()     # mm
                  traj = [pos.copy()]
  
++                # 初期方向
++                vec = rng.normal(size=3)
++                vec /= np.linalg.norm(vec) + 1e-12
++
                  for j in range(number_of_steps):
-                     # ランダム方向の単位ベクトル
-                     vec = rng.normal(size=3)
-                     vec /= np.linalg.norm(vec) + 1e-12
+-                    # ランダム方向の単位ベクトル
+-                    vec = rng.normal(size=3)
+-                    vec /= np.linalg.norm(vec) + 1e-12
++                    if j > 0:
++                        vec = _perturb_direction(vec, self.constants["deviation"], rng)
  
                      pos = pos + vec * step_len         # ★ mm 単位で更新
                      traj.append(pos.copy())
  
-                     # デバッグ：最初の一歩だけ確認
+-                    # デバッグ：最初の一歩だけ確認
                      if rep == 0 and i == 0 and j == 0:
                          print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
+ 
+                 self.trajectory.append(np.vstack(traj))
+ 
+         print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, "
+               f"step_len={step_len} mm")
+ 
+ 
+ 
+     import matplotlib.pyplot as plt
+ 
+     def plot_trajectories(self, max_sperm=5, save_path=None):
+         """
+         インスタンスのself.trajectory（リスト of N×3 配列）を可視化
+         max_sperm: 表示する精子軌跡の最大本数
+         save_path: Noneなら画面表示のみ、パス指定で保存
+         """
+         import matplotlib.pyplot as plt
+         import numpy as np
+         import os
+ 
+         trajectories = np.array(self.trajectory)
+         constants = self.constants
+ 

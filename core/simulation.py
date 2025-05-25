@@ -10,6 +10,32 @@ from core.geometry import CubeShape, DropShape, SpotShape, CerosShape
 from tools.derived_constants import calculate_derived_constants
 
 
+def _make_local_basis(forward: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return two unit vectors orthogonal to ``forward``."""
+    f = forward / (np.linalg.norm(forward) + 1e-12)
+    if abs(f[0]) < 0.9:
+        base = np.array([1.0, 0.0, 0.0])
+    else:
+        base = np.array([0.0, 1.0, 0.0])
+    y = np.cross(f, base)
+    y /= np.linalg.norm(y) + 1e-12
+    x = np.cross(y, f)
+    return x, y
+
+
+def _perturb_direction(prev: np.ndarray, deviation: float, rng: np.random.Generator) -> np.ndarray:
+    """Return a unit vector deviated from ``prev``."""
+    lx, ly = _make_local_basis(prev)
+    theta = rng.normal(0.0, deviation)
+    phi = rng.uniform(-np.pi, np.pi)
+    new_dir = (
+        np.cos(theta) * prev
+        + np.sin(theta) * (np.cos(phi) * lx + np.sin(phi) * ly)
+    )
+    new_dir /= np.linalg.norm(new_dir) + 1e-12
+    return new_dir
+
+
 def _egg_position(constants):
     """Return (egg_x, egg_y, egg_z) according to shape and localization."""
     shape = constants.get("shape", "cube").lower()
@@ -148,15 +174,17 @@ class SpermSimulation:
                 pos = shape_obj.initial_position()     # mm
                 traj = [pos.copy()]
 
+                # 初期方向
+                vec = rng.normal(size=3)
+                vec /= np.linalg.norm(vec) + 1e-12
+
                 for j in range(number_of_steps):
-                    # ランダム方向の単位ベクトル
-                    vec = rng.normal(size=3)
-                    vec /= np.linalg.norm(vec) + 1e-12
+                    if j > 0:
+                        vec = _perturb_direction(vec, self.constants["deviation"], rng)
 
                     pos = pos + vec * step_len         # ★ mm 単位で更新
                     traj.append(pos.copy())
 
-                    # デバッグ：最初の一歩だけ確認
                     if rep == 0 and i == 0 and j == 0:
                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
 
