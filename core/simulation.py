@@ -220,7 +220,7 @@ class SpermSimulation:
         global_min = min(all_mins)
         global_max = max(all_maxs)
 
-        fig, axes = plt.subplots(1, 3, figsize=(15, 6))
+        fig, axes = plt.subplots(1, 3, figsize=(10, 4))
         ax_xy, ax_xz, ax_yz = axes
         colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
         n_sperm = min(len(trajectories), max_sperm)
@@ -313,7 +313,7 @@ class SpermSimulation:
         n_plot = min(max_sperm, len(trajectories))
         perc_shown = n_plot / len(trajectories) * 100
 
-        fig, axes = plt.subplots(1, 3, figsize=(16, 5))  # XY, XZ, YZ
+        fig, axes = plt.subplots(1, 3, figsize=(10, 4))  # XY, XZ, YZ
         ax_labels = [("X", "Y"), ("X", "Z"), ("Y", "Z")]
         idxs = [(0, 1), (0, 2), (1, 2)]
 

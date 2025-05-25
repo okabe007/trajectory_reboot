@@ -1,126 +1,8 @@
 diff --git a/core/simulation.py b/core/simulation.py
-index a9a9df0..4f028af 100644
+index a9a9df0..5ffb863 100644
 --- a/core/simulation.py
 +++ b/core/simulation.py
-@@ -1,37 +1,63 @@
- 
- import numpy as np
- import matplotlib.pyplot as plt
- from matplotlib import patches
- from datetime import datetime
- import math
- import os
- from tools.plot_utils import plot_2d_trajectories
- from core.geometry import CubeShape, DropShape, SpotShape, CerosShape
- from tools.derived_constants import calculate_derived_constants
- 
- 
-+def _make_local_basis(forward: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-+    """Return two unit vectors orthogonal to ``forward``."""
-+    f = forward / (np.linalg.norm(forward) + 1e-12)
-+    if abs(f[0]) < 0.9:
-+        base = np.array([1.0, 0.0, 0.0])
-+    else:
-+        base = np.array([0.0, 1.0, 0.0])
-+    y = np.cross(f, base)
-+    y /= np.linalg.norm(y) + 1e-12
-+    x = np.cross(y, f)
-+    return x, y
-+
-+
-+def _perturb_direction(prev: np.ndarray, deviation: float, rng: np.random.Generator) -> np.ndarray:
-+    """Return a unit vector deviated from ``prev``."""
-+    lx, ly = _make_local_basis(prev)
-+    theta = rng.normal(0.0, deviation)
-+    phi = rng.uniform(-np.pi, np.pi)
-+    new_dir = (
-+        np.cos(theta) * prev
-+        + np.sin(theta) * (np.cos(phi) * lx + np.sin(phi) * ly)
-+    )
-+    new_dir /= np.linalg.norm(new_dir) + 1e-12
-+    return new_dir
-+
-+
- def _egg_position(constants):
-     """Return (egg_x, egg_y, egg_z) according to shape and localization."""
-     shape = constants.get("shape", "cube").lower()
-     loc = constants.get("egg_localization", "center")
-     r = constants.get("gamete_r", 0)
- 
-     if shape == "cube":
-         positions = {
-             "center": (0, 0, 0),
-             "bottom_center": (0, 0, constants["z_min"] + r),
-             "bottom_side": (
-                 constants["x_min"] / 2 + r,
-                 constants["y_min"] / 2 + r,
-                 constants["z_min"] + r,
-             ),
-             "bottom_corner": (
-                 constants["x_min"] + r,
-                 constants["y_min"] + r,
-                 constants["z_min"] + r,
-             ),
-         }
-     elif shape == "drop":
-         drop_r = constants["drop_r"]
-         positions = {
-             "center": (0, 0, 0),
-diff --git a/core/simulation.py b/core/simulation.py
-index a9a9df0..4f028af 100644
---- a/core/simulation.py
-+++ b/core/simulation.py
-@@ -123,59 +149,61 @@ class SpermSimulation:
-         else:
-             raise ValueError(f"Unsupported shape: {shape}")
- 
-         # ---- シミュレーション設定 -------------------------------------
-         number_of_sperm  = int(self.constants.get("number_of_sperm", 10))
-         number_of_steps  = int(self.constants.get("number_of_steps", 10))
-         step_len         = self.constants["step_length"]     # ← mm / step
-         seed_val         = self.constants.get("seed_number")
-         if seed_val is not None and str(seed_val).lower() != "none":
-             try:
-                 rng = np.random.default_rng(int(seed_val))
-             except Exception:
-                 rng = np.random.default_rng()
-         else:
-             rng = np.random.default_rng()
- 
-         self.trajectory = []   # ← 毎 run() でリセット
- 
-         # ---- ループ ---------------------------------------------------
-         for rep in range(int(sim_repeat)):
-             for i in range(number_of_sperm):
- 
-                 pos = shape_obj.initial_position()     # mm
-                 traj = [pos.copy()]
- 
-+                # 初期方向
-+                vec = rng.normal(size=3)
-+                vec /= np.linalg.norm(vec) + 1e-12
-+
-                 for j in range(number_of_steps):
--                    # ランダム方向の単位ベクトル
--                    vec = rng.normal(size=3)
--                    vec /= np.linalg.norm(vec) + 1e-12
-+                    if j > 0:
-+                        vec = _perturb_direction(vec, self.constants["deviation"], rng)
- 
-                     pos = pos + vec * step_len         # ★ mm 単位で更新
-                     traj.append(pos.copy())
- 
--                    # デバッグ：最初の一歩だけ確認
-                     if rep == 0 and i == 0 and j == 0:
-                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
- 
-                 self.trajectory.append(np.vstack(traj))
- 
-         print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, "
-               f"step_len={step_len} mm")
- 
- 
- 
+@@ -167,51 +167,51 @@ class SpermSimulation:
      import matplotlib.pyplot as plt
  
      def plot_trajectories(self, max_sperm=5, save_path=None):
@@ -135,4 +17,98 @@ index a9a9df0..4f028af 100644
  
          trajectories = np.array(self.trajectory)
          constants = self.constants
+ 
+         if trajectories is None or len(trajectories) == 0:
+             print("[WARNING] 軌跡データがありません。run()実行後にplot_trajectoriesしてください。")
+             return
+ 
+         # --- 軸幅の統一 ---
+         all_mins = [constants["x_min"], constants["y_min"], constants["z_min"]]
+         all_maxs = [constants["x_max"], constants["y_max"], constants["z_max"]]
+         global_min = min(all_mins)
+         global_max = max(all_maxs)
+ 
+-        fig, axes = plt.subplots(1, 3, figsize=(15, 6))
++        fig, axes = plt.subplots(1, 3, figsize=(10, 4))
+         ax_xy, ax_xz, ax_yz = axes
+         colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
+         n_sperm = min(len(trajectories), max_sperm)
+ 
+         # --- draw egg position ---
+         if constants.get("shape", "cube").lower() != "ceros":
+             egg_x, egg_y, egg_z = _egg_position(constants)
+             for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
+                 ax.add_patch(
+                     patches.Circle(
+                         (x, y),
+                         radius=constants.get("gamete_r", 0),
+                         facecolor="yellow",
+                         alpha=0.8,
+                         ec="gray",
+                         linewidth=1.0,
+                     )
+                 )
+ 
+         # XY投影
+         for i in range(n_sperm):
+             ax_xy.plot(trajectories[i][:,0], trajectories[i][:,1], color=colors[i % len(colors)])
+         ax_xy.set_xlim(global_min, global_max)
+         ax_xy.set_ylim(global_min, global_max)
+         ax_xy.set_aspect('equal')
+diff --git a/core/simulation.py b/core/simulation.py
+index a9a9df0..5ffb863 100644
+--- a/core/simulation.py
++++ b/core/simulation.py
+@@ -261,51 +261,51 @@ class SpermSimulation:
+         fig.suptitle(f"{param_summary}\n{param_summary2}", fontsize=12)
+         plt.tight_layout(rect=[0, 0, 1, 0.95])
+         if save_path is not None:
+             os.makedirs(os.path.dirname(save_path), exist_ok=True)
+             plt.savefig(save_path)
+             plt.close()
+         else:
+             plt.show()
+ 
+ 
+     # def plot_trajectories(self, max_sperm=5, save_path=None):
+         """
+         シミュレーションで記録したself.trajectory（リスト of N×3 配列）を可視化します。
+         max_sperm: 表示する精子軌跡の最大本数
+         save_path: Noneならこのスクリプトと同じ階層のFigs_and_Moviesに自動保存
+         """
+         trajectories = self.trajectory  # run()でセットされているはず
+         if not trajectories or len(trajectories) == 0:
+             print("[WARNING] 軌跡データがありません。run()実行後にplot_trajectoriesしてください。")
+             return
+ 
+         # 描画本数を制限
+         n_plot = min(max_sperm, len(trajectories))
+         perc_shown = n_plot / len(trajectories) * 100
+ 
+-        fig, axes = plt.subplots(1, 3, figsize=(16, 5))  # XY, XZ, YZ
++        fig, axes = plt.subplots(1, 3, figsize=(10, 4))  # XY, XZ, YZ
+         ax_labels = [("X", "Y"), ("X", "Z"), ("Y", "Z")]
+         idxs = [(0, 1), (0, 2), (1, 2)]
+ 
+         for ax, (label_x, label_y), (i, j) in zip(axes, ax_labels, idxs):
+             for t in trajectories[:n_plot]:
+                 ax.plot(t[:, i], t[:, j], alpha=0.7)
+             ax.set_xlabel(label_x)
+             ax.set_ylabel(label_y)
+             ax.set_aspect('equal')
+             ax.set_title(f"{label_x}{label_y} projection")
+ 
+         # suptitleにパラメータ2行分
+         param_summary = ', '.join(f"{k}={self.constants.get(k)}" for k in ["shape", "vol", "sperm_conc", "vsl", "deviation"])
+         param_summary2 = ', '.join(f"{k}={self.constants.get(k)}" for k in ["surface_time", "egg_localization", "gamete_r", "sim_min", "sampl_rate_hz", "sim_repeat"])
+         fig.suptitle(f"{param_summary}\n{param_summary2}", fontsize=12)
+ 
+         # 本数注釈
+         fig.text(0.99, 0.01, f"※ 表示は全体の{perc_shown:.1f}%（{n_plot}本/{len(trajectories)}本）", ha='right', fontsize=10, color="gray")
+ 
+         fig.tight_layout(rect=[0, 0.03, 1, 0.92])
+ 
+         # --- 保存先パスをスクリプトの場所基準で作る ---
+         import datetime
+         dtstr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
  
