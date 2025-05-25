@@ -75,7 +75,7 @@ def _egg_position(constants):
 def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=None):
     x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
 
-    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+    fig, axs = plt.subplots(1, 3, figsize=(10, 4))
 
     shape = str(constants.get('shape', '')).lower()
     drop_r = float(constants.get('drop_r', 0.0))

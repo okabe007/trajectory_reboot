@@ -1,36 +1,55 @@
-diff --git a/tools/make_plots.py b/tools/make_plots.py
-index c67a664..aef6237 100644
---- a/tools/make_plots.py
-+++ b/tools/make_plots.py
-@@ -1,30 +1,30 @@
+diff --git a/tools/plot_utils.py b/tools/plot_utils.py
+index 3cbd96a..21b1825 100644
+--- a/tools/plot_utils.py
++++ b/tools/plot_utils.py
+@@ -1,49 +1,49 @@
  import matplotlib.pyplot as plt
  import numpy as np
+ import os
+ from datetime import datetime
+ from matplotlib import patches
+ from tools.derived_constants import get_limits  # スマートなimport
  
- def plot_2d_trajectories(traj: np.ndarray, max_sperm: int = 5):
-     """
-     複数の精子軌跡をxy平面上にプロットする。
-     
-     Parameters:
-     traj : np.ndarray
-         軌跡配列。形状は (num_sperm, num_steps, 3)
-     max_sperm : int
-         表示する精子の最大数（0〜max_sperm-1 の軌跡を描画）
-     """
-     num_sperm = min(traj.shape[0], max_sperm)
+ def _make_save_path(prefix="trajectory", ext="png", dir="Figs_and_Movies"):
+     os.makedirs(dir, exist_ok=True)
+     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+     return f"{dir}/{prefix}_{timestamp}.{ext}"
  
--    plt.figure(figsize=(8, 6))
-+    plt.figure(figsize=(10, 4))
-     for i in range(num_sperm):
-         x = traj[i, :, 0]
-         y = traj[i, :, 1]
-         plt.plot(x, y, label=f"Sperm {i}")
-         plt.plot(x[0], y[0], 'go')  # Start point
-         plt.plot(x[-1], y[-1], 'ro')  # End point
+ def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel, equal=False):
+     ax.set_xlim(*xlim)
+     ax.set_ylim(*ylim)
+     ax.set_xlabel(xlabel)
+     ax.set_ylabel(ylabel)
+     if equal:
+         ax.set_aspect('equal', adjustable='box')
  
-     plt.xlabel("X position (μm)")
-     plt.ylabel("Y position (μm)")
-     plt.title("Sperm Trajectories (2D)")
-     plt.legend()
-     plt.grid(True)
-     plt.tight_layout()
-     plt.show()
+ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=None):
+     x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
+ 
+-    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
++    fig, axs = plt.subplots(1, 3, figsize=(10, 4))
+ 
+     shape = str(constants.get('shape', '')).lower()
+     drop_r = float(constants.get('drop_r', 0.0))
+     spot_r = float(constants.get('spot_r', 0.0))
+     spot_bottom_height = float(constants.get('spot_bottom_height', 0.0))
+     spot_bottom_r = float(constants.get('spot_bottom_r', spot_r))
+ 
+     if shape == 'spot' and spot_r > 0:
+         axis_configs = [
+             (axs[0], (-spot_r, spot_r), (-spot_r, spot_r), "X", "Y", "XY-projection"),
+             (axs[1], (-spot_r, spot_r), (spot_bottom_height, spot_r), "X", "Z", "XZ-projection"),
+             (axs[2], (-spot_r, spot_r), (spot_bottom_height, spot_r), "Y", "Z", "YZ-projection"),
+         ]
+     else:
+         axis_configs = [
+             (axs[0], (x_min, x_max), (y_min, y_max), "X", "Y", "XY-projection"),
+             (axs[1], (x_min, x_max), (z_min, z_max), "X", "Z", "XZ-projection"),
+             (axs[2], (y_min, y_max), (z_min, z_max), "Y", "Z", "YZ-projection"),
+         ]
+ 
+     for ax, xlim, ylim, xlabel, ylabel, title in axis_configs:
+         equal = shape in ('drop', 'cube', 'spot')
+         _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel, equal)
+         ax.set_title(title)
+         if shape == 'drop' and drop_r > 0:
