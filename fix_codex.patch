@@ -1,59 +1,177 @@
-diff --git a/gui_app.py b/gui_app.py
-index c0518a3..a7cb551 100644
---- a/gui_app.py
-+++ b/gui_app.py
-@@ -348,50 +348,54 @@ class SimApp(tk.Tk):
-                 spot_r=spot_r,
-                 spot_bottom_r=bottom_r,
-                 spot_bottom_height=bottom_h,
-                 radius=spot_r,
-                 x_min=-spot_r, x_max=spot_r,
-                 y_min=-spot_r, y_max=spot_r,
-                 z_min=bottom_h - spot_r,
-                 z_max=bottom_h + spot_r,
-             )
- 
-         elif shape == "ceros":
-             self.config_data.update(
-                 x_min=-8.15, x_max=8.15,
-                 y_min=-8.15, y_max=8.15,
-                 z_min=-8.15, z_max=8.15,
-             )
- 
-         # --- ③ generic parameters ------------------------------------
-         vsl = float(self.config_data.get("vsl", 0.0))
-         hz = float(self.config_data.get("sampl_rate_hz", 1.0))
-         self.config_data.update(
-             step_length=vsl / hz if hz else 0.0,
-             limit=1e-9,
-         )
- 
-+        # --- シミュレーションステップ数を sim_min と sampl_rate_hz から計算 ---
-+        sim_min = float(self.config_data.get("sim_min", 0.0))
-+        self.config_data["number_of_steps"] = int(sim_min * 60 * hz)
+diff --git a/spermsim/main.py b/spermsim/main.py
+index df4e820..d4e8b6d 100644
+--- a/spermsim/main.py
++++ b/spermsim/main.py
+@@ -593,145 +593,104 @@ def face_and_inward_dir(temp_position, base_position, last_vec, IO_status, stick
+                 elif ax_name == 'z':
+                     mid_z = ax_val
+             if len(free_axes) == 1:
+                 fa = free_axes[0]
+                 if fa == 'x':
+                     mid_x = (x_min + x_max) / 2
+                 elif fa == 'y':
+                     mid_y = (y_min + y_max) / 2
+                 elif fa == 'z':
+                     mid_z = (z_min + z_max) / 2
+             midpoint_of_edge = np.array([mid_x, mid_y, mid_z], dtype=float)
+             direction_vec = -midpoint_of_edge
+             norm_dv = np.linalg.norm(direction_vec)
+             if norm_dv < constants['limit']:
+                 raise RuntimeError("no way3")
+             inward_dir = direction_vec / norm_dv
+             return inward_dir
+         else:
+             return None
+     elif IO_status == IOStatus.VERTEX_OUT:
+         return None
+     else:
+         return None
+     ###########
+ def sample_random_angles(sigma, constants, cone_type="full"):
+-    max_theta = np.pi
++    """Return random angles for cone sampling.
 +
-         # --- ④ 派生値計算（互換性用） ---------------------------------
-         self.config_data = calculate_derived_constants(self.config_data)
++    Parameters
++    ----------
++    sigma : float
++        Standard deviation for the normal distribution of ``theta``.
++    constants : dict
++        Dictionary containing simulation constants. ``constants['limit']`` is
++        used to avoid exactly ``0`` or ``pi``.
++    cone_type : {"full", "half", "quarter"}
++        Type of cone restricting ``theta``.
++
++    Notes
++    -----
++    ``phi`` is sampled from the full circle regardless of ``cone_type``.
++    ``theta`` is restricted according to ``cone_type``.
++    """
++
++    min_theta = constants.get("limit", 0.0)
+     if cone_type == "quarter":
+-        min_theta = constants['limit']
+-        max_theta = np.pi - constants['limit']
+-        min_phi = -np.pi/4 + constants['limit']
+-        max_phi = np.pi/4 - constants['limit']
++        max_theta = np.pi / 4 - min_theta
+     elif cone_type == "half":
+-        min_theta = constants['limit']
+-        max_theta = np.pi - constants['limit']
+-        min_phi = -np.pi/2 + constants['limit']
+-        max_phi = np.pi/2 - constants['limit']
++        max_theta = np.pi / 2 - min_theta
+     else:
+-        min_theta = constants['limit']
+-        max_theta = np.pi - constants['limit']
+-        min_phi = -np.pi
+-        max_phi = np.pi
++        max_theta = np.pi - min_theta
++
+     while True:
+         theta = abs(np.random.normal(0, sigma))
+         if min_theta < theta < max_theta:
+             break
+-    phi = np.random.uniform(min_phi, max_phi)
+-    return theta, phi
+-def make_local_xy(v, inward_dir=None):
+-    v_norm = LA.norm(v)
+-    if v_norm < 1e-12:
+-        v = np.array([0, 0, 1], dtype=float)
+-    else:
+-        v = v / v_norm
+-    if inward_dir is None:
+-        arbitrary = np.array([1, 0, 0], dtype=float)
+-        if abs(v[0]) > 0.9:
+-            arbitrary = np.array([0, 1, 0], dtype=float)
+-        local_x = np.cross(v, arbitrary)
+-        lx = LA.norm(local_x)
+-        if lx < 1e-12:
+-            local_x = np.array([1, 0, 0], dtype=float)
+-        else:
+-            local_x /= lx
+-    else:
+-        inward_norm = np.linalg.norm(inward_dir)
+-        if inward_norm < 1e-12:
+-            local_x = np.array([1, 0, 0], dtype=float)
+-        else:
+-            local_x = inward_dir / inward_norm
+-        if np.allclose(np.abs(np.dot(local_x, v)), 1.0, atol=1e-12):
+-            raise ValueError("inward_dir は v と平行でないベクトルを指定してください。")
+-    local_y = np.cross(v, local_x)
+-    local_y /= LA.norm(local_y)
+-    return local_x, local_y
+-def generate_cone_vector(v, local_x, local_y, inward_dir, constants, sigma, remaining_distance,
+-                         cone_type='full', do_projection=False):
+-    theta, phi = sample_random_angles(sigma, constants, cone_type="full")
+-    x_local = np.sin(theta)*np.cos(phi)
+-    y_local = np.sin(theta)*np.sin(phi)
+-    z_local = np.cos(theta)
+-    temp_dir = x_local*local_x + y_local*local_y + z_local*v
+-    if do_projection:
+-        n = inward_dir
+-        n_norm = LA.norm(n)
+-        if n_norm > 1e-12:
+-            n_unit = n / n_norm
+-            dot_val = np.dot(temp_dir, n_unit)
+-            temp_dir = temp_dir - dot_val*n_unit
+-    nd = LA.norm(temp_dir)
+-    if nd < 1e-12:
+-        return np.zeros(3)
+-    temp_dir *= (remaining_distance / nd)
+-    return temp_dir
+-
  
-         # --- ③ ini 保存 -----------------------------------------------
-         save_config(self.config_data)
-         # --- ④ シミュレーション実行 --------------------------------------
-         sim = SpermSimulation(self.config_data)
-         sim.run(self.config_data["sim_repeat"])
++    phi = np.random.uniform(0.0, 2 * np.pi)
++    return theta, phi
+ def make_local_xy(forward_vec, inward_dir):
+     if inward_dir is None:
+         # 任意のベースベクトルを使って直交系を作る
+         if abs(forward_vec[0]) < 0.9:
+             base = np.array([1.0, 0.0, 0.0])
+         else:
+             base = np.array([0.0, 1.0, 0.0])
+         local_y = np.cross(forward_vec, base)
+         local_y /= LA.norm(local_y)
+         local_x = np.cross(local_y, forward_vec)
+     else:
+         local_y = np.cross(inward_dir, forward_vec)
+         local_y /= LA.norm(local_y)
+         local_x = np.cross(local_y, inward_dir)
+     return local_x, local_y
  
-         # --- ⑤ 描画 -----------------------------------------------------
-         if "2D" in modes:
-             plot_2d_trajectories(np.array(sim.trajectory), self.config_data)
-         elif "3D" in modes:
-             plot_3d_trajectories(np.array(sim.trajectory), self.config_data)
-         elif "movie" in modes:
-             sim.plot_movie_trajectories()   # 実装に合わせて
+ def generate_cone_vector(forward, local_x, local_y, inward_dir, constants,
+                          sigma, remaining_distance, cone_type, do_projection):
+-    theta = np.random.normal(0, sigma)
+-    phi = np.random.uniform(0, 2 * np.pi)
++    """Generate a displacement vector within a specified cone."""
  
+-    if cone_type == "half":
+-        phi = np.abs(phi)  # 上半球に制限
+-    elif cone_type == "quarter":
+-        phi = np.abs(phi) / 2  # クォータコーン
++    theta, phi = sample_random_angles(sigma, constants, cone_type)
  
-     # ---------------------------------------------------------------------
-     # 起動時に .ini から各 Tk 変数を復元
-     # ---------------------------------------------------------------------
-     def _restore_from_config(self) -> None:
-         for k, var in self.tk_vars.items():
-             if k not in self.config_data:
-                 continue
+     dx = np.sin(theta) * np.cos(phi)
+     dy = np.sin(theta) * np.sin(phi)
+     dz = np.cos(theta)
+ 
+     dir_vec = dx * local_x + dy * local_y + dz * forward
+     dir_vec /= LA.norm(dir_vec)
+     vec = dir_vec * remaining_distance
+ 
+     if do_projection:
+         vec = vec - np.dot(vec, inward_dir) * inward_dir  # 面への射影
+ 
+     return vec
+ 
+ def prepare_new_vector(last_vec, constants,
+                        boundary_type="free",
+                        stick_status=0,
+                        inward_dir=None):
+     v_norm = LA.norm(last_vec)
+     if v_norm < constants['limit']:
+         raise ValueError("prepare_new_vector: last_vec が短すぎます。")
+     v = last_vec / v_norm
+ 
+     if boundary_type == "edge":
+         cone_type = "quarter"
