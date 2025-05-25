@@ -89,6 +89,50 @@ def _egg_position(constants):
     return positions[loc]
 
 
+def _io_check_drop(position: np.ndarray, constants: dict) -> str:
+    """Return 'inside', 'border', or 'outside' for drop shape."""
+    r = constants.get("drop_r", 0.0)
+    limit = constants.get("limit", 1e-9)
+    dist = np.linalg.norm(position)
+    if dist > r + limit:
+        return "outside"
+    elif dist < r - limit:
+        return "inside"
+    else:
+        return "border"
+
+
+def _line_sphere_intersection(p0: np.ndarray, p1: np.ndarray, r: float) -> tuple[np.ndarray, float]:
+    """Return intersection point and remaining distance after hitting the sphere."""
+    d = p1 - p0
+    d_norm = np.linalg.norm(d)
+    if d_norm < 1e-12:
+        return p0.copy(), 0.0
+    d_unit = d / d_norm
+    f = p0
+    a = 1.0
+    b = 2.0 * float(f @ d_unit)
+    c = float(f @ f) - r * r
+    disc = b * b - 4 * a * c
+    if disc < 0:
+        return p0.copy(), 0.0
+    sqrt_disc = math.sqrt(disc)
+    t1 = (-b - sqrt_disc) / (2 * a)
+    t2 = (-b + sqrt_disc) / (2 * a)
+    t_candidates = [t for t in (t1, t2) if t >= 0]
+    if not t_candidates:
+        return p0.copy(), 0.0
+    t = min(t_candidates)
+    intersection = p0 + d_unit * t
+    remaining = max(d_norm - t, 0.0)
+    return intersection, remaining
+
+
+def _reflect(vec: np.ndarray, normal: np.ndarray) -> np.ndarray:
+    """Reflect ``vec`` on plane defined by ``normal``."""
+    return vec - 2.0 * np.dot(vec, normal) * normal
+
+
 class SpermSimulation:
     def __init__(self, constants):
         self.constants = constants
@@ -181,8 +225,15 @@ class SpermSimulation:
                 for j in range(number_of_steps):
                     if j > 0:
                         vec = _perturb_direction(vec, self.constants["deviation"], rng)
-
-                    pos = pos + vec * step_len         # ★ mm 単位で更新
+                    candidate = pos + vec * step_len
+                    if shape == "drop":
+                        status = _io_check_drop(candidate, self.constants)
+                        if status == "outside":
+                            intersect, remain = _line_sphere_intersection(pos, candidate, self.constants["drop_r"])
+                            normal = intersect / (np.linalg.norm(intersect) + 1e-12)
+                            vec = _reflect(vec, normal)
+                            candidate = intersect + vec * remain
+                    pos = candidate
                     traj.append(pos.copy())
 
                     if rep == 0 and i == 0 and j == 0:
