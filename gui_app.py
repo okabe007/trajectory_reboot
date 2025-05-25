@@ -66,7 +66,7 @@ def _calc_spot_geometry(volume_ul: float, angle_deg: float) -> tuple[float, floa
 
     R_um = (low + high) / 2.0
     bottom_r_um = R_um * math.sin(angle_rad)
-    bottom_height_um = -R_um * math.cos(angle_rad)
+    bottom_height_um = R_um * math.cos(angle_rad)
     return R_um / 1000.0, bottom_r_um / 1000.0, bottom_height_um / 1000.0
 
 # ---------------------------------------------------------------------------
@@ -351,8 +351,8 @@ class SimApp(tk.Tk):
                 radius=spot_r,
                 x_min=-spot_r, x_max=spot_r,
                 y_min=-spot_r, y_max=spot_r,
-                z_min=bottom_h - spot_r,
-                z_max=bottom_h + spot_r,
+                z_min=bottom_h,
+                z_max=spot_r,
             )
 
         elif shape == "ceros":
