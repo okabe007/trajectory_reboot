@@ -60,7 +60,7 @@ def hist_run(run_id:int, bins:int=20):
     if not times:
         print("No contacts for run",run_id); return
     times=np.array(times)
-    plt.figure()
+    plt.figure(figsize=(10, 4))
     plt.hist(times,bins=bins,color="orange",edgecolor="k")
     plt.title(f"Run {run_id} – Contact time histogram")
     plt.xlabel("Time (s)"); plt.ylabel("Count")

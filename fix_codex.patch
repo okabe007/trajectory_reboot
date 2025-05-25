@@ -1,102 +1,57 @@
-diff --git a/spermsim/main.py b/spermsim/main.py
-index df4e820..bc61b85 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -1541,95 +1541,95 @@ class SpermPlot:
-             for ax in axes:
-                 ax.add_patch(patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1))
-         elif shape == 'cube':
-             pass
- class SpermTrajectoryVisualizer:
-     def __init__(self, simulation):
-         self.simulation = simulation
-         self.constants = self.simulation.constants
-         self.sperm_plot = SpermPlot(self.simulation)
-         (
-             egg_x, egg_y, egg_z,
-             e_x_min, e_y_min, e_z_min,
-             e_x_max, e_y_max, e_z_max,
-             egg_center, egg_position_4d
-         ) = placement_of_eggs(self.constants)
-         self.egg_center = np.array([egg_x, egg_y, egg_z])
-         self.egg_radius = self.constants['gamete_r']
-     def animate_trajectory(self):
-         if self.constants.get("make_movie", "no").lower() != "yes":
-             return None
-         shape = self.constants.get("shape", "spot")
-         num_sperm = self.simulation.number_of_sperm
-         n_sim = self.simulation.number_of_steps
-         if shape == "ceros":
-             plt.ion()
--            fig, ax = plt.subplots()
-+            fig, ax = plt.subplots(figsize=(10, 4))
-             ax.set_xlim(-0.815, 0.815)
-             ax.set_ylim(-0.62, 0.62)
-             ax.set_aspect('equal', adjustable='box')
-             ax.set_xlabel("X")
-             ax.set_ylabel("Y")
-             ax.set_title("CEROS 2D Animation (Zoomed)")
-             lines = [ax.plot([], [], lw=2)[0] for _ in range(num_sperm)]
-             def init():
-                 for line in lines:
-                     line.set_data([], [])
-                 return lines
-             def animate(i):
-                 if i % 10 == 0:
-                     percentage = (i / (n_sim - 1)) * 100
-                     print(f"Progress: {percentage:.2f}%")
-                 for j, line in enumerate(lines):
-                     base_pos = self.simulation.trajectory[j, i]
-                     end_pos  = self.simulation.trajectory[j, i + 1]
-                     xdata = [base_pos[0], end_pos[0]]
-                     ydata = [base_pos[1], end_pos[1]]
-                     line.set_data(xdata, ydata)
-                     line.set_color(self.simulation.vec_colors[j, i])
-                     line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
-                 return lines
-             anim = FuncAnimation(
-                 fig,
-                 animate,
-                 init_func=init,
-                 frames=n_sim - 1,
-                 interval=180,
-                 blit=False
-             )
-             output_folder = MOV_DIR                                             
-             os.makedirs(output_folder, exist_ok=True)
-             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-             mov_filename = f"sperm_simulation_ceros_{timestamp}.mp4"
-             output_path = os.path.join(output_folder, mov_filename)
-             _safe_anim_save(anim, output_path)                                        
-             print(f"{output_path}")
-             plt.show()
-             return output_path
-         else:
-             plt.ion()
--            fig = plt.figure()
-+            fig = plt.figure(figsize=(10, 4))
-             ax = fig.add_subplot(111, projection='3d')
-             merged_events = self.simulation.merge_contact_events()
-             contacts_count = len(merged_events)
-             if self.constants["sim_min"] > 0:
-                 contacts_per_hour = contacts_count / (self.constants["sim_min"] / 60)
-             else:
-                 contacts_per_hour = 0
-             title_str_3d = (
-                 f"vol: {self.constants['volume']} μl, "
-                 f"conc: {self.constants['sperm_conc']}/ml, "
-                 f"vsl: {self.constants['vsl']} mm, "
-                 f"sampling: {self.constants['sampl_rate_hz']} Hz,\n"
-                 f"dev: {self.constants['deviation']}, "
-                 f"stick: {self.constants['stick_sec']} sec,\n"
-                 f"sperm/egg interaction: {contacts_count} during {self.constants['sim_min']} min, "
-                 f"egg: {self.constants['egg_localization']}, "
-             )
-             if shape == "spot":
-                 title_str_3d += f"spot_angle: {self.constants.get('spot_angle', 'N/A')} degree"
-             fig.suptitle(title_str_3d, fontsize=8, y=0.93)
-             egg_u = np.linspace(0, 2 * np.pi, 50)
-             egg_v = np.linspace(0, np.pi, 50)
-             ex = (
-                 self.egg_center[0]
-                 + self.egg_radius * np.outer(np.cos(egg_u), np.sin(egg_v))
+diff --git a/tools/analyze.py b/tools/analyze.py
+index 6c7425c..bc18237 100644
+--- a/tools/analyze.py
++++ b/tools/analyze.py
+@@ -38,51 +38,51 @@ def group_stats(cols: list[str]):
+              CASE WHEN COUNT(*)>1
+                   THEN sqrt(AVG(contact_count*contact_count)
+                        -   AVG(contact_count)*AVG(contact_count))
+                   ELSE 0 END),
+            COUNT(*)
+       FROM runs JOIN summary USING(run_id)
+      GROUP BY {group}
+      ORDER BY {group};
+     """
+     cur = _conn().cursor()
+     cur.execute(q)
+     rows = cur.fetchall()
+ 
+     header = " | ".join(cols + ["mean", "sd", "n"])
+     print(header); print("-" * len(header))
+     for r in rows:
+         print(" | ".join(map(str, r)))
+ 
+ def hist_run(run_id:int, bins:int=20):
+     cur=_conn().cursor()
+     cur.execute("SELECT time_s FROM contacts WHERE run_id=? ORDER BY time_s;",(run_id,))
+     times=[t[0] for t in cur.fetchall()]
+     if not times:
+         print("No contacts for run",run_id); return
+     times=np.array(times)
+-    plt.figure()
++    plt.figure(figsize=(10, 4))
+     plt.hist(times,bins=bins,color="orange",edgecolor="k")
+     plt.title(f"Run {run_id} – Contact time histogram")
+     plt.xlabel("Time (s)"); plt.ylabel("Count")
+     out=pathlib.Path(f"hist_run{run_id}.png"); plt.savefig(out,dpi=120)
+     print("Saved histogram →",out)
+ 
+ # ----------------------------------------------------------------------
+ def main(argv=None):
+     p=argparse.ArgumentParser()
+     p.add_argument("--list",action="store_true",help="最新 20 件を一覧")
+     p.add_argument("--group-by",metavar="COLS",
+                    help="カンマ区切り列で平均±SD(contact_count) を計算")
+     p.add_argument("--hist",type=int,metavar="RUN_ID",
+                    help="run_id の接触時刻ヒストグラムを PNG 保存")
+     args=p.parse_args(argv)
+ 
+     if args.list:
+         list_runs(); return
+     if args.group_by:
+         cols=args.group_by.split(",")
+         group_stats(cols); return
+     if args.hist is not None:
+         hist_run(args.hist); return
+     p.print_help()
+ 
