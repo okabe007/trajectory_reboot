@@ -85,9 +85,12 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
 
     if shape == 'spot' and spot_r > 0:
         axis_configs = [
-            (axs[0], (-spot_r, spot_r), (-spot_r, spot_r), "X", "Y", "XY-projection"),
-            (axs[1], (-spot_r, spot_r), (spot_bottom_height, spot_r), "X", "Z", "XZ-projection"),
-            (axs[2], (-spot_r, spot_r), (spot_bottom_height, spot_r), "Y", "Z", "YZ-projection"),
+            (axs[0], (-spot_bottom_r, spot_bottom_r), (-spot_bottom_r, spot_bottom_r),
+             "X", "Y", "XY-projection"),
+            (axs[1], (-spot_bottom_r, spot_bottom_r), (spot_bottom_height, spot_r),
+             "X", "Z", "XZ-projection"),
+            (axs[2], (-spot_bottom_r, spot_bottom_r), (spot_bottom_height, spot_r),
+             "Y", "Z", "YZ-projection"),
         ]
     else:
         axis_configs = [
