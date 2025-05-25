@@ -13,7 +13,7 @@ def plot_2d_trajectories(traj: np.ndarray, max_sperm: int = 5):
     """
     num_sperm = min(traj.shape[0], max_sperm)
 
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(10, 4))
     for i in range(num_sperm):
         x = traj[i, :, 0]
         y = traj[i, :, 1]

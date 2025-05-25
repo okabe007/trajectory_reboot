@@ -10,11 +10,37 @@ from core.geometry import CubeShape, DropShape, SpotShape, CerosShape
 from tools.derived_constants import calculate_derived_constants
 
 
+def _make_local_basis(forward: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return two unit vectors orthogonal to ``forward``."""
+    f = forward / (np.linalg.norm(forward) + 1e-12)
+    if abs(f[0]) < 0.9:
+        base = np.array([1.0, 0.0, 0.0])
+    else:
+        base = np.array([0.0, 1.0, 0.0])
+    y = np.cross(f, base)
+    y /= np.linalg.norm(y) + 1e-12
+    x = np.cross(y, f)
+    return x, y
+
+
+def _perturb_direction(prev: np.ndarray, deviation: float, rng: np.random.Generator) -> np.ndarray:
+    """Return a unit vector deviated from ``prev``."""
+    lx, ly = _make_local_basis(prev)
+    theta = rng.normal(0.0, deviation)
+    phi = rng.uniform(-np.pi, np.pi)
+    new_dir = (
+        np.cos(theta) * prev
+        + np.sin(theta) * (np.cos(phi) * lx + np.sin(phi) * ly)
+    )
+    new_dir /= np.linalg.norm(new_dir) + 1e-12
+    return new_dir
+
+
 def _egg_position(constants):
     """Return (egg_x, egg_y, egg_z) according to shape and localization."""
     shape = constants.get("shape", "cube").lower()
     loc = constants.get("egg_localization", "center")
-    r = constants.get("gamete_r", 0)
+    r = constants["gamete_r"]
 
     if shape == "cube":
         positions = {
@@ -130,7 +156,10 @@ class SpermSimulation:
         seed_val         = self.constants.get("seed_number")
         if seed_val is not None and str(seed_val).lower() != "none":
             try:
-                rng = np.random.default_rng(int(seed_val))
+                seed_int = int(seed_val)
+                # --- 全ての乱数生成を同じシードで制御するため ---
+                np.random.seed(seed_int)
+                rng = np.random.default_rng(seed_int)
             except Exception:
                 rng = np.random.default_rng()
         else:
@@ -145,15 +174,17 @@ class SpermSimulation:
                 pos = shape_obj.initial_position()     # mm
                 traj = [pos.copy()]
 
+                # 初期方向
+                vec = rng.normal(size=3)
+                vec /= np.linalg.norm(vec) + 1e-12
+
                 for j in range(number_of_steps):
-                    # ランダム方向の単位ベクトル
-                    vec = rng.normal(size=3)
-                    vec /= np.linalg.norm(vec) + 1e-12
+                    if j > 0:
+                        vec = _perturb_direction(vec, self.constants["deviation"], rng)
 
                     pos = pos + vec * step_len         # ★ mm 単位で更新
                     traj.append(pos.copy())
 
-                    # デバッグ：最初の一歩だけ確認
                     if rep == 0 and i == 0 and j == 0:
                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
 
@@ -189,25 +220,24 @@ class SpermSimulation:
         global_min = min(all_mins)
         global_max = max(all_maxs)
 
-        fig, axes = plt.subplots(1, 3, figsize=(15, 6))
+        fig, axes = plt.subplots(1, 3, figsize=(10, 4))
         ax_xy, ax_xz, ax_yz = axes
         colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
         n_sperm = min(len(trajectories), max_sperm)
 
         # --- draw egg position ---
-        if constants.get("shape", "cube").lower() != "ceros":
-            egg_x, egg_y, egg_z = _egg_position(constants)
-            for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
-                ax.add_patch(
-                    patches.Circle(
-                        (x, y),
-                        radius=constants.get("gamete_r", 0),
-                        facecolor="yellow",
-                        alpha=0.8,
-                        ec="gray",
-                        linewidth=1.0,
-                    )
+        egg_x, egg_y, egg_z = _egg_position(constants)
+        for ax, (x, y) in zip(axes, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
+            ax.add_patch(
+                patches.Circle(
+                    (x, y),
+                    radius=constants.get("gamete_r", 0),
+                    facecolor="yellow",
+                    alpha=0.8,
+                    ec="gray",
+                    linewidth=1.0,
                 )
+            )
 
         # XY投影
         for i in range(n_sperm):
@@ -283,7 +313,7 @@ class SpermSimulation:
         n_plot = min(max_sperm, len(trajectories))
         perc_shown = n_plot / len(trajectories) * 100
 
-        fig, axes = plt.subplots(1, 3, figsize=(16, 5))  # XY, XZ, YZ
+        fig, axes = plt.subplots(1, 3, figsize=(10, 4))  # XY, XZ, YZ
         ax_labels = [("X", "Y"), ("X", "Z"), ("Y", "Z")]
         idxs = [(0, 1), (0, 2), (1, 2)]
 

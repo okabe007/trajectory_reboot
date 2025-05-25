@@ -615,76 +615,39 @@ def face_and_inward_dir(temp_position, base_position, last_vec, IO_status, stick
         return None
     ###########
 def sample_random_angles(sigma, constants, cone_type="full"):
-    max_theta = np.pi
+    """Return random angles for cone sampling.
+
+    Parameters
+    ----------
+    sigma : float
+        Standard deviation for the normal distribution of ``theta``.
+    constants : dict
+        Dictionary containing simulation constants. ``constants['limit']`` is
+        used to avoid exactly ``0`` or ``pi``.
+    cone_type : {"full", "half", "quarter"}
+        Type of cone restricting ``theta``.
+
+    Notes
+    -----
+    ``phi`` is sampled from the full circle regardless of ``cone_type``.
+    ``theta`` is restricted according to ``cone_type``.
+    """
+
+    min_theta = constants.get("limit", 0.0)
     if cone_type == "quarter":
-        min_theta = constants['limit']
-        max_theta = np.pi - constants['limit']
-        min_phi = -np.pi/4 + constants['limit']
-        max_phi = np.pi/4 - constants['limit']
+        max_theta = np.pi / 4 - min_theta
     elif cone_type == "half":
-        min_theta = constants['limit']
-        max_theta = np.pi - constants['limit']
-        min_phi = -np.pi/2 + constants['limit']
-        max_phi = np.pi/2 - constants['limit']
+        max_theta = np.pi / 2 - min_theta
     else:
-        min_theta = constants['limit']
-        max_theta = np.pi - constants['limit']
-        min_phi = -np.pi
-        max_phi = np.pi
+        max_theta = np.pi - min_theta
+
     while True:
         theta = abs(np.random.normal(0, sigma))
         if min_theta < theta < max_theta:
             break
-    phi = np.random.uniform(min_phi, max_phi)
+
+    phi = np.random.uniform(0.0, 2 * np.pi)
     return theta, phi
-def make_local_xy(v, inward_dir=None):
-    v_norm = LA.norm(v)
-    if v_norm < 1e-12:
-        v = np.array([0, 0, 1], dtype=float)
-    else:
-        v = v / v_norm
-    if inward_dir is None:
-        arbitrary = np.array([1, 0, 0], dtype=float)
-        if abs(v[0]) > 0.9:
-            arbitrary = np.array([0, 1, 0], dtype=float)
-        local_x = np.cross(v, arbitrary)
-        lx = LA.norm(local_x)
-        if lx < 1e-12:
-            local_x = np.array([1, 0, 0], dtype=float)
-        else:
-            local_x /= lx
-    else:
-        inward_norm = np.linalg.norm(inward_dir)
-        if inward_norm < 1e-12:
-            local_x = np.array([1, 0, 0], dtype=float)
-        else:
-            local_x = inward_dir / inward_norm
-        if np.allclose(np.abs(np.dot(local_x, v)), 1.0, atol=1e-12):
-            raise ValueError("inward_dir は v と平行でないベクトルを指定してください。")
-    local_y = np.cross(v, local_x)
-    local_y /= LA.norm(local_y)
-    return local_x, local_y
-def generate_cone_vector(v, local_x, local_y, inward_dir, constants, sigma, remaining_distance,
-                         cone_type='full', do_projection=False):
-    theta, phi = sample_random_angles(sigma, constants, cone_type="full")
-    x_local = np.sin(theta)*np.cos(phi)
-    y_local = np.sin(theta)*np.sin(phi)
-    z_local = np.cos(theta)
-    temp_dir = x_local*local_x + y_local*local_y + z_local*v
-    if do_projection:
-        n = inward_dir
-        n_norm = LA.norm(n)
-        if n_norm > 1e-12:
-            n_unit = n / n_norm
-            dot_val = np.dot(temp_dir, n_unit)
-            temp_dir = temp_dir - dot_val*n_unit
-    nd = LA.norm(temp_dir)
-    if nd < 1e-12:
-        return np.zeros(3)
-    temp_dir *= (remaining_distance / nd)
-    return temp_dir
-
-
 def make_local_xy(forward_vec, inward_dir):
     if inward_dir is None:
         # 任意のベースベクトルを使って直交系を作る
@@ -703,13 +666,9 @@ def make_local_xy(forward_vec, inward_dir):
 
 def generate_cone_vector(forward, local_x, local_y, inward_dir, constants,
                          sigma, remaining_distance, cone_type, do_projection):
-    theta = np.random.normal(0, sigma)
-    phi = np.random.uniform(0, 2 * np.pi)
+    """Generate a displacement vector within a specified cone."""
 
-    if cone_type == "half":
-        phi = np.abs(phi)  # 上半球に制限
-    elif cone_type == "quarter":
-        phi = np.abs(phi) / 2  # クォータコーン
+    theta, phi = sample_random_angles(sigma, constants, cone_type)
 
     dx = np.sin(theta) * np.cos(phi)
     dy = np.sin(theta) * np.sin(phi)
@@ -1563,7 +1522,7 @@ class SpermTrajectoryVisualizer:
         n_sim = self.simulation.number_of_steps
         if shape == "ceros":
             plt.ion()
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=(10, 4))
             ax.set_xlim(-0.815, 0.815)
             ax.set_ylim(-0.62, 0.62)
             ax.set_aspect('equal', adjustable='box')
@@ -1607,7 +1566,7 @@ class SpermTrajectoryVisualizer:
             return output_path
         else:
             plt.ion()
-            fig = plt.figure()
+            fig = plt.figure(figsize=(10, 4))
             ax = fig.add_subplot(111, projection='3d')
             merged_events = self.simulation.merge_contact_events()
             contacts_count = len(merged_events)
