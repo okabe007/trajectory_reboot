@@ -349,8 +349,8 @@ class SimApp(tk.Tk):
                 spot_bottom_r=bottom_r,
                 spot_bottom_height=bottom_h,
                 radius=spot_r,
-                x_min=-spot_r, x_max=spot_r,
-                y_min=-spot_r, y_max=spot_r,
+                x_min=-bottom_r, x_max=bottom_r,
+                y_min=-bottom_r, y_max=bottom_r,
                 z_min=bottom_h,
                 z_max=spot_r,
             )
