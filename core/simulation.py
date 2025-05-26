@@ -195,7 +195,10 @@ def _line_sphere_intersection(p0: np.ndarray, p1: np.ndarray, r: float) -> tuple
     sqrt_disc = math.sqrt(disc)
     t1 = (-b - sqrt_disc) / (2 * a)
     t2 = (-b + sqrt_disc) / (2 * a)
-    t_candidates = [t for t in (t1, t2) if t >= 0]
+    # Only intersections that lie on the segment between ``p0`` and ``p1``
+    # are valid.  Without this check ``t`` may point to an intersection far
+    # away from the current step which leads to an excessively long vector.
+    t_candidates = [t for t in (t1, t2) if 0 <= t <= d_norm]
     if not t_candidates:
         return p0.copy(), 0.0
     t = min(t_candidates)
