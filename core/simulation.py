@@ -396,7 +396,6 @@ class SpermSimulation:
                                 normal = np.array([0.0, 0.0, 1.0])
                                 vec = _reflect(vec, normal)
                                 candidate = intersect + vec * remain
-                        prev_states[i] = status
                     pos = candidate
                     traj.append(pos.copy())
 
