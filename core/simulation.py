@@ -196,6 +196,78 @@ def _reflect(vec: np.ndarray, normal: np.ndarray) -> np.ndarray:
     return vec - 2.0 * np.dot(vec, normal) * normal
 
 
+def polygon_mode(
+    current_pos: np.ndarray,
+    polygon_idx: int,
+    spot_r: float,
+    stick_count: int,
+    deviation: float,
+    spot_angle_rad: float,
+) -> np.ndarray:
+    """Return next vector when tracing the bottom edge polygon.
+
+    When ``stick_count`` falls below 1, ``detach_edge_mode`` is invoked to
+    generate a vector that points inside the spherical cap.
+    """
+
+    if stick_count >= 1:
+        theta_step = 2 * np.pi / 70
+        next_polygon_idx = (polygon_idx + 1) % 70
+        next_theta = next_polygon_idx * theta_step
+
+        x = spot_r * np.sin(spot_angle_rad) * np.cos(next_theta)
+        y = spot_r * np.sin(spot_angle_rad) * np.sin(next_theta)
+        z = spot_r * np.cos(spot_angle_rad)
+
+        next_pos = np.array([x, y, z])
+        next_vector = next_pos - current_pos
+    else:
+        next_vector = detach_edge_mode(
+            current_pos, spot_r, deviation, spot_angle_rad
+        )
+
+    return next_vector
+
+
+def detach_edge_mode(
+    current_pos: np.ndarray,
+    spot_r: float,
+    deviation: float,
+    spot_angle_rad: float,
+) -> np.ndarray:
+    """Return a vector pointing inside the spherical cap with limited spread."""
+
+    sphere_center = np.array([0.0, 0.0, 0.0])
+    base_center = np.array([0.0, 0.0, spot_r * np.cos(spot_angle_rad)])
+
+    local_z = sphere_center - current_pos
+    local_z /= np.linalg.norm(local_z) + 1e-12
+
+    local_x = base_center - current_pos
+    local_x = local_x - np.dot(local_x, local_z) * local_z
+    local_x /= np.linalg.norm(local_x) + 1e-12
+
+    local_y = np.cross(local_z, local_x)
+
+    theta = abs(np.random.normal(0.0, deviation))
+    phi_max = spot_angle_rad - (2 * np.pi / 70)
+    phi = np.random.uniform(0.0, phi_max)
+
+    local_vec = np.array(
+        [
+            np.sin(theta) * np.cos(phi),
+            np.sin(theta) * np.sin(phi),
+            np.cos(theta),
+        ]
+    )
+
+    rotation = np.column_stack([local_x, local_y, local_z])
+    global_vec = rotation @ local_vec
+    global_vec /= np.linalg.norm(global_vec) + 1e-12
+
+    return global_vec
+
+
 class SpermSimulation:
     def __init__(self, constants):
         self.constants = constants
