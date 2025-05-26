@@ -1,91 +1,161 @@
-diff --git a/spermsim/main.py b/spermsim/main.py
-index aa6bc55..8d265d1 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -890,73 +890,68 @@ def IO_check_spot(base_position, temp_position, constants, IO_status, stick_stat
-     xy_dist = np.sqrt(temp_position[0] ** 2 + temp_position[1] ** 2)
+diff --git a/core/simulation.py b/core/simulation.py
+index 2da7664..1abe548 100644
+--- a/core/simulation.py
++++ b/core/simulation.py
+@@ -337,120 +337,149 @@ class SpermSimulation:
+         elif shape == "drop":
+             shape_obj = DropShape(self.constants)
+         elif shape == "ceros":
+             shape_obj = CerosShape(self.constants)
+         else:
+             raise ValueError(f"Unsupported shape: {shape}")
  
-     if z_tip > bottom_z + limit:
-         if r_tip > radius + limit:
-             return IOStatus.SPHERE_OUT
-         if r_tip < radius - limit:
-             return IOStatus.TEMP_ON_POLYGON if stick_status > 0 else IOStatus.INSIDE
+         # ---- シミュレーション設定 -------------------------------------
+         number_of_sperm  = int(self.constants.get("number_of_sperm", 10))
+         number_of_steps  = int(self.constants.get("number_of_steps", 10))
+         step_len         = self.constants["step_length"]     # ← mm / step
+         seed_val         = self.constants.get("seed_number")
+         if seed_val is not None and str(seed_val).lower() != "none":
+             try:
+                 seed_int = int(seed_val)
+                 # --- 全ての乱数生成を同じシードで制御するため ---
+                 np.random.seed(seed_int)
+                 rng = np.random.default_rng(seed_int)
+             except Exception:
+                 rng = np.random.default_rng()
+         else:
+             rng = np.random.default_rng()
  
-         if _depth == 0:
-             scaled = base_position + (temp_position - base_position) * 1.2
-             return IO_check_spot(base_position, scaled, constants, IO_status, stick_status, _depth=1)
-         return IOStatus.INSIDE
+         self.trajectory = []   # ← 毎 run() でリセット
+         prev_states = [SpotIO.INSIDE for _ in range(number_of_sperm)]
++        bottom_modes = [False for _ in range(number_of_sperm)]
++        stick_statuses = [0 for _ in range(number_of_sperm)]
  
-     if z_tip < bottom_z - limit:
-         denom = temp_position[2] - base_position[2]
-         t = (bottom_z - base_position[2]) / denom
-         if t < 0 or t > 1:
-             return IOStatus.SPHERE_OUT
-         intersect_xy = base_position[:2] + t * (temp_position[:2] - base_position[:2])
-         dist_xy = np.sqrt(intersect_xy[0] ** 2 + intersect_xy[1] ** 2)
-         if dist_xy < bottom_r + limit:
-             return IOStatus.BOTTOM_OUT
-         return IOStatus.SPHERE_OUT
+         # ---- ループ ---------------------------------------------------
+         for rep in range(int(sim_repeat)):
+             for i in range(number_of_sperm):
  
-     if bottom_z - limit < z_tip < bottom_z + limit:
--        if xy_dist > bottom_r + limit:
--            return IOStatus.SPOT_EDGE_OUT
--
--        if abs(xy_dist - bottom_r) <= limit:
--            base_xy = np.sqrt(base_position[0] ** 2 + base_position[1] ** 2)
--            base_on_border = (
--                abs(base_position[2] - bottom_z) <= limit and abs(base_xy - bottom_r) <= limit
--            )
--            if base_on_border:
--                if IO_status == IOStatus.POLYGON_MODE:
--                    return IOStatus.POLYGON_MODE
--                return IOStatus.SPOT_BOTTOM if xy_dist < bottom_r else IOStatus.SPOT_EDGE_OUT
--
-+        base_xy = np.sqrt(base_position[0] ** 2 + base_position[1] ** 2)
-+        start_on_border = (
-+            abs(base_position[2] - bottom_z) <= limit and abs(base_xy - bottom_r) <= limit
-+        )
-+        if start_on_border:
-+            if IO_status == IOStatus.POLYGON_MODE:
-+                return IOStatus.POLYGON_MODE
-+            if xy_dist < bottom_r - limit:
-+                return IOStatus.SPOT_BOTTOM
-+            if xy_dist > bottom_r + limit:
-+                return IOStatus.SPOT_EDGE_OUT
-+            return IOStatus.SPOT_BOTTOM if xy_dist < bottom_r else IOStatus.SPOT_EDGE_OUT
-+        else:
-             if _depth == 0:
-                 scaled = base_position + (temp_position - base_position) * 1.2
-                 return IO_check_spot(base_position, scaled, constants, IO_status, stick_status, _depth=1)
-             return IOStatus.INSIDE
+                 pos = shape_obj.initial_position()     # mm
+                 traj = [pos.copy()]
+                 
+                 # 初期方向
+                 vec = rng.normal(size=3)
+                 vec /= np.linalg.norm(vec) + 1e-12
  
--        if xy_dist < bottom_r - limit:
--            if IO_status in [IOStatus.SPOT_EDGE_OUT, IOStatus.POLYGON_MODE] or stick_status > 0:
--                return IOStatus.POLYGON_MODE
--            return IOStatus.SPOT_BOTTOM
--
-     return IOStatus.INSIDE
- class SpermSimulation:
-     def initialize_thickness(self):
-         for j in range(self.number_of_sperm):
-             for i in range(self.number_of_steps):
-                 self.vec_thickness_2d[j, i] = 0.4
-                 self.vec_thickness_3d[j, i] = 1.5
+                 for j in range(number_of_steps):
+                     if j > 0:
+                         vec = _perturb_direction(vec, self.constants["deviation"], rng)
++                    if shape == "spot" and bottom_modes[i] and stick_statuses[i] > 0:
++                        vec[2] = 0.0
++                        vec /= np.linalg.norm(vec) + 1e-12
+                     candidate = pos + vec * step_len
+                     if shape == "drop":
+                         base_pos = pos
+                         move_len = step_len
+                         status = _io_check_drop(candidate, self.constants, base_pos)
+                         if status == "bottom":
+                             step_vec = vec * move_len
+                             if abs(step_vec[2]) < 1e-12:
+                                 normal = np.array([0.0, 0.0, 1.0])
+                                 vec = _reflect(vec, normal)
+                                 candidate = base_pos + vec * move_len
+                             else:
+                                 t = (0.0 - base_pos[2]) / step_vec[2]
+                                 t = max(0.0, min(1.0, t))
+                                 intersect = base_pos + step_vec * t
+                                 remain = move_len * (1.0 - t)
+                                 normal = np.array([0.0, 0.0, 1.0])
+                                 vec = _reflect(vec, normal)
+                                 base_pos = intersect
+                                 candidate = base_pos + vec * remain
+                             status = _io_check_drop(candidate, self.constants, base_pos)
+                         if status == "outside":
+                             intersect, remain = _line_sphere_intersection(
+                                 base_pos, candidate, self.constants["drop_r"]
+                             )
+                             normal = intersect / (np.linalg.norm(intersect) + 1e-12)
+                             vec = _reflect(vec, normal)
+                             candidate = intersect + vec * remain
+                     elif shape == "spot":
+                         prev = prev_states[i]
+                         status = _io_check_spot(pos, candidate, self.constants, prev)
+                         if status == SpotIO.SPHERE_OUT or status == SpotIO.SPOT_EDGE_OUT:
+                             intersect, remain = _line_sphere_intersection(
+                                 pos, candidate, self.constants["spot_r"]
+                             )
+                             normal = intersect / (np.linalg.norm(intersect) + 1e-12)
+                             vec = _reflect(vec, normal)
+                             candidate = intersect + vec * remain
+                         elif status == SpotIO.BOTTOM_OUT:
++                            bottom_modes[i] = True
++                            if stick_statuses[i] == 0:
++                                stick_statuses[i] = int(
++                                    self.constants["surface_time"]
++                                    / self.constants["sampl_rate_hz"]
++                                )
+                             bottom_z = self.constants["spot_bottom_height"]
+                             step_vec = vec * step_len
+                             if abs(step_vec[2]) < 1e-12:
+-                                normal = np.array([0.0, 0.0, 1.0])
+-                                vec = _reflect(vec, normal)
+-                                candidate = pos + vec * step_len
++                                proj = step_vec.copy()
++                                proj[2] = 0.0
++                                norm = np.linalg.norm(proj)
++                                if norm < 1e-12:
++                                    proj = np.array([1.0, 0.0, 0.0]) * step_len
++                                    norm = step_len
++                                candidate = pos + proj / norm * step_len
++                                vec = proj / norm
+                             else:
+                                 t = (bottom_z - pos[2]) / step_vec[2]
+                                 t = max(0.0, min(1.0, t))
+                                 intersect = pos + step_vec * t
+                                 remain = step_len * (1.0 - t)
+-                                normal = np.array([0.0, 0.0, 1.0])
+-                                vec = _reflect(vec, normal)
+-                                candidate = intersect + vec * remain
++                                proj_dir = vec.copy()
++                                proj_dir[2] = 0.0
++                                norm = np.linalg.norm(proj_dir)
++                                if norm < 1e-12:
++                                    proj_dir = np.array([1.0, 0.0, 0.0])
++                                    norm = 1.0
++                                proj_dir /= norm
++                                candidate = intersect + proj_dir * remain
++                                vec = (candidate - pos) / step_len
+                     pos = candidate
+                     traj.append(pos.copy())
++                    if shape == "spot":
++                        prev_states[i] = status
++                        if bottom_modes[i]:
++                            if stick_statuses[i] > 0:
++                                stick_statuses[i] -= 1
++                            if stick_statuses[i] == 0:
++                                bottom_modes[i] = False
  
-     
-     def __init__(self, constants, visualizer, simulation_data):
+                     if rep == 0 and i == 0 and j == 0:
+                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
  
-         self.constants = constants  # ✅ 最初に設定
+                 self.trajectory.append(np.vstack(traj))
  
-         self.number_of_sperm = self.constants["number_of_sperm"]
-         self.number_of_steps = self.constants["number_of_steps"]
+         print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, "
+               f"step_len={step_len} mm")
  
-         self.vec_thickness_2d = np.zeros((self.number_of_sperm, self.number_of_steps))
-         self.vec_thickness_3d = np.zeros((self.number_of_sperm, self.number_of_steps))
-         self.initialize_thickness()
  
-         self.visualizer = visualizer
-         self.simulation = simulation_data
-         self.n_stop = self.constants.get('n_stop', 0)
  
-         if constants.get('reflection_analysis', 'no') == "yes":
+     import matplotlib.pyplot as plt
+ 
+     def plot_trajectories(self, max_sperm=5, save_path=None):
+         """
+         インスタンスのself.trajectory（リスト of N×3 配列）を可視化
+         max_sperm: 表示する精子軌跡の最大本数
+         save_path: Noneなら画面表示のみ、パス指定で保存
+         """
+         import matplotlib.pyplot as plt
+         import numpy as np
+         import os
+ 
+         trajectories = np.array(self.trajectory)
+         constants = self.constants
+	

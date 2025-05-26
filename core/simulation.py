@@ -359,6 +359,8 @@ class SpermSimulation:
 
         self.trajectory = []   # ← 毎 run() でリセット
         prev_states = [SpotIO.INSIDE for _ in range(number_of_sperm)]
+        bottom_modes = [False for _ in range(number_of_sperm)]
+        stick_statuses = [0 for _ in range(number_of_sperm)]
 
         # ---- ループ ---------------------------------------------------
         for rep in range(int(sim_repeat)):
@@ -374,6 +376,9 @@ class SpermSimulation:
                 for j in range(number_of_steps):
                     if j > 0:
                         vec = _perturb_direction(vec, self.constants["deviation"], rng)
+                    if shape == "spot" and bottom_modes[i] and stick_statuses[i] > 0:
+                        vec[2] = 0.0
+                        vec /= np.linalg.norm(vec) + 1e-12
                     candidate = pos + vec * step_len
                     if shape == "drop":
                         base_pos = pos
@@ -413,22 +418,46 @@ class SpermSimulation:
                             vec = _reflect(vec, normal)
                             candidate = intersect + vec * remain
                         elif status == SpotIO.BOTTOM_OUT:
+                            bottom_modes[i] = True
+                            if stick_statuses[i] == 0:
+                                stick_statuses[i] = int(
+                                    self.constants["surface_time"]
+                                    / self.constants["sampl_rate_hz"]
+                                )
                             bottom_z = self.constants["spot_bottom_height"]
                             step_vec = vec * step_len
                             if abs(step_vec[2]) < 1e-12:
-                                normal = np.array([0.0, 0.0, 1.0])
-                                vec = _reflect(vec, normal)
-                                candidate = pos + vec * step_len
+                                proj = step_vec.copy()
+                                proj[2] = 0.0
+                                norm = np.linalg.norm(proj)
+                                if norm < 1e-12:
+                                    proj = np.array([1.0, 0.0, 0.0]) * step_len
+                                    norm = step_len
+                                candidate = pos + proj / norm * step_len
+                                vec = proj / norm
                             else:
                                 t = (bottom_z - pos[2]) / step_vec[2]
                                 t = max(0.0, min(1.0, t))
                                 intersect = pos + step_vec * t
                                 remain = step_len * (1.0 - t)
-                                normal = np.array([0.0, 0.0, 1.0])
-                                vec = _reflect(vec, normal)
-                                candidate = intersect + vec * remain
+                                proj_dir = vec.copy()
+                                proj_dir[2] = 0.0
+                                norm = np.linalg.norm(proj_dir)
+                                if norm < 1e-12:
+                                    proj_dir = np.array([1.0, 0.0, 0.0])
+                                    norm = 1.0
+                                proj_dir /= norm
+                                candidate = intersect + proj_dir * remain
+                                vec = (candidate - pos) / step_len
                     pos = candidate
                     traj.append(pos.copy())
+                    if shape == "spot":
+                        prev_states[i] = status
+                        if bottom_modes[i]:
+                            if stick_statuses[i] > 0:
+                                stick_statuses[i] -= 1
+                            if stick_statuses[i] == 0:
+                                bottom_modes[i] = False
 
                     if rep == 0 and i == 0 and j == 0:
                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
