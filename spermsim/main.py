@@ -1322,9 +1322,14 @@ class SpermSimulation:
                     intersection_point = np.array([])
                 else:
                     last_vec = self.trajectory[j, i] - self.trajectory[j, i - 1]
-                new_temp_position, new_last_vec, updated_stick, next_state = self.bottom_edge_mode(
-                    base_position, last_vec, stick_status, constants
-                )
+                if shape == "drop":
+                    new_temp_position, new_last_vec, updated_stick, next_state = self.drop_polygon_move(
+                        base_position, last_vec, stick_status, constants
+                    )
+                else:
+                    new_temp_position, new_last_vec, updated_stick, next_state = self.bottom_edge_mode(
+                        base_position, last_vec, stick_status, constants
+                    )
                 temp_position = new_temp_position
                 last_vec = new_last_vec
                 stick_status = updated_stick
@@ -1505,6 +1510,56 @@ class SpermSimulation:
         else:
             new_state = IOStatus.BOTTOM_EDGE_MODE
         return new_temp_position, new_last_vec, new_stick_status, new_state
+
+    def drop_polygon_move(self, base_position, last_vec, stick_status, constants):
+        """Return next step while sliding along the drop surface."""
+
+        step_len = constants['step_length']
+        dev_mag = constants['deviation']
+        limit = constants['limit']
+
+        normal = base_position / (LA.norm(base_position) + 1e-12)
+        vec_norm = LA.norm(last_vec)
+        if vec_norm < limit:
+            if abs(normal[0]) < 0.9:
+                tangent = np.cross(normal, [1.0, 0.0, 0.0])
+            else:
+                tangent = np.cross(normal, [0.0, 1.0, 0.0])
+            vec_norm = LA.norm(tangent)
+            v_base = tangent / (vec_norm + 1e-12)
+        else:
+            v_base = last_vec / vec_norm
+            v_base = v_base - np.dot(v_base, normal) * normal
+            base_norm = LA.norm(v_base)
+            if base_norm < limit:
+                if abs(normal[0]) < 0.9:
+                    tangent = np.cross(normal, [1.0, 0.0, 0.0])
+                else:
+                    tangent = np.cross(normal, [0.0, 1.0, 0.0])
+                v_base = tangent / (LA.norm(tangent) + 1e-12)
+            else:
+                v_base /= base_norm
+
+        u = v_base
+        v = np.cross(normal, u)
+        v /= LA.norm(v) + 1e-12
+
+        theta = np.random.uniform(-np.pi, np.pi)
+        deviation_vec = dev_mag * (np.cos(theta) * u + np.sin(theta) * v)
+
+        final_dir = v_base + deviation_vec
+        final_dir /= LA.norm(final_dir) + 1e-12
+
+        new_last_vec = final_dir * step_len
+        new_temp_position = base_position + new_last_vec
+
+        new_stick_status = stick_status - 1 if stick_status > 0 else 0
+        if new_stick_status <= 0:
+            next_state = IOStatus.INSIDE
+        else:
+            next_state = IOStatus.POLYGON_MODE
+
+        return new_temp_position, new_last_vec, new_stick_status, next_state
 class SpermPlot:
     already_saved_global_flag = False
 
