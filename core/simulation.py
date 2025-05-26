@@ -89,21 +89,30 @@ def _egg_position(constants):
     return positions[loc]
 
 
-def _io_check_drop(position: np.ndarray, constants: dict) -> str:
-    """Return status for drop shape with bottom plane at ``z=0``."""
+def _io_check_drop(
+    position: np.ndarray, constants: dict, base_position: np.ndarray
+) -> str:
+    """Return in/out status for drop shape with extended boundary check."""
+
     r = constants.get("drop_r", 0.0)
     limit = constants.get("limit", 1e-9)
 
-    if position[2] < -limit:
-        return "bottom"
-
     dist = np.linalg.norm(position)
+
     if dist > r + limit:
         return "outside"
-    elif dist < r - limit:
+    if dist < r - limit:
         return "inside"
-    else:
-        return "border"
+
+    # Near the border, extend the vector from ``base_position``
+    # to ``position`` and re-evaluate.
+    vector = position - base_position
+    extended_position = base_position + vector * 1.2
+    extended_dist = np.linalg.norm(extended_position)
+
+    if extended_dist <= r:
+        return "inside"
+    return "outside"
 
 
 class SpotIO:
@@ -369,7 +378,7 @@ class SpermSimulation:
                     if shape == "drop":
                         base_pos = pos
                         move_len = step_len
-                        status = _io_check_drop(candidate, self.constants)
+                        status = _io_check_drop(candidate, self.constants, base_pos)
                         if status == "bottom":
                             step_vec = vec * move_len
                             if abs(step_vec[2]) < 1e-12:
@@ -385,7 +394,7 @@ class SpermSimulation:
                                 vec = _reflect(vec, normal)
                                 base_pos = intersect
                                 candidate = base_pos + vec * remain
-                            status = _io_check_drop(candidate, self.constants)
+                            status = _io_check_drop(candidate, self.constants, base_pos)
                         if status == "outside":
                             intersect, remain = _line_sphere_intersection(
                                 base_pos, candidate, self.constants["drop_r"]
