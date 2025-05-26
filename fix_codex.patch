@@ -1,8 +1,20 @@
 diff --git a/core/simulation.py b/core/simulation.py
-index efff94e..2e945e5 100644
+index 5ad1aaa..fd71b99 100644
 --- a/core/simulation.py
 +++ b/core/simulation.py
-@@ -80,50 +80,68 @@ def _egg_position(constants):
+@@ -68,53 +68,57 @@ def _egg_position(constants):
+         spot_bottom_height = constants.get("spot_bottom_height", 0)
+         positions = {
+             "center": (0, 0, (spot_bottom_height + spot_r) / 2),
+             "bottom_center": (0, 0, spot_bottom_height + r),
+             "bottom_edge": (
+                 math.sqrt(max((spot_r - r) ** 2 - (spot_bottom_height + r) ** 2, 0)),
+                 0,
+                 spot_bottom_height + r,
+             ),
+         }
+     elif shape == "ceros":
+         cx = (constants["x_min"] + constants["x_max"]) / 2
          cy = (constants["y_min"] + constants["y_max"]) / 2
          cz = (constants["z_min"] + constants["z_max"]) / 2
          positions = {"center": (cx, cy, cz), "bottom_center": (cx, cy, cz), "bottom_edge": (cx, cy, cz)}
@@ -16,9 +28,14 @@ index efff94e..2e945e5 100644
  
  
  def _io_check_drop(position: np.ndarray, constants: dict) -> str:
-     """Return 'inside', 'border', or 'outside' for drop shape."""
+-    """Return 'inside', 'border', or 'outside' for drop shape."""
++    """Return status for drop shape with bottom plane at ``z=0``."""
      r = constants.get("drop_r", 0.0)
      limit = constants.get("limit", 1e-9)
++
++    if position[2] < -limit:
++        return "bottom"
++
      dist = np.linalg.norm(position)
      if dist > r + limit:
          return "outside"
@@ -28,60 +45,35 @@ index efff94e..2e945e5 100644
          return "border"
  
  
-+def _io_check_spot(position: np.ndarray, constants: dict) -> str:
-+    """Return 'inside', 'outside', or 'bottom' for spot shape."""
-+    r = constants.get("spot_r", 0.0)
-+    bottom_z = constants.get("spot_bottom_height", 0.0)
-+    bottom_r = constants.get("spot_bottom_r", 0.0)
-+    limit = constants.get("limit", 1e-9)
-+
-+    if position[2] < bottom_z - limit:
-+        # below the bottom plane
-+        if np.linalg.norm(position[:2]) <= bottom_r + limit:
-+            return "bottom"
-+        # fall through to outside check on sphere
-+
-+    if np.linalg.norm(position) > r + limit:
-+        return "outside"
-+    return "inside"
-+
-+
- def _line_sphere_intersection(p0: np.ndarray, p1: np.ndarray, r: float) -> tuple[np.ndarray, float]:
-     """Return intersection point and remaining distance after hitting the sphere."""
-     d = p1 - p0
-     d_norm = np.linalg.norm(d)
-     if d_norm < 1e-12:
-         return p0.copy(), 0.0
-     d_unit = d / d_norm
-     f = p0
-     a = 1.0
-     b = 2.0 * float(f @ d_unit)
-     c = float(f @ f) - r * r
-     disc = b * b - 4 * a * c
-     if disc < 0:
-         return p0.copy(), 0.0
-     sqrt_disc = math.sqrt(disc)
-     t1 = (-b - sqrt_disc) / (2 * a)
-     t2 = (-b + sqrt_disc) / (2 * a)
-     t_candidates = [t for t in (t1, t2) if t >= 0]
-     if not t_candidates:
-         return p0.copy(), 0.0
-     t = min(t_candidates)
-     intersection = p0 + d_unit * t
-     remaining = max(d_norm - t, 0.0)
-     return intersection, remaining
+ class SpotIO:
+     """Status constants for spot geometry."""
  
+     INSIDE = "inside"
+     BORDER = "border"
+     SPHERE_OUT = "sphere_out"
+     BOTTOM_OUT = "bottom_out"
+     SPOT_EDGE_OUT = "spot_edge_out"
+     POLYGON_MODE = "polygon_mode"
+     SPOT_BOTTOM = "spot_bottom"
+ 
+ 
+ def _io_check_spot(
+     base_position: np.ndarray,
+     temp_position: np.ndarray,
+     constants: dict,
 diff --git a/core/simulation.py b/core/simulation.py
-index efff94e..2e945e5 100644
+index 5ad1aaa..fd71b99 100644
 --- a/core/simulation.py
 +++ b/core/simulation.py
-@@ -207,54 +225,80 @@ class SpermSimulation:
+@@ -341,54 +345,72 @@ class SpermSimulation:
+                 rng = np.random.default_rng(seed_int)
              except Exception:
                  rng = np.random.default_rng()
          else:
              rng = np.random.default_rng()
  
          self.trajectory = []   # ← 毎 run() でリセット
+         prev_states = [SpotIO.INSIDE for _ in range(number_of_sperm)]
  
          # ---- ループ ---------------------------------------------------
          for rep in range(int(sim_repeat)):
@@ -89,7 +81,7 @@ index efff94e..2e945e5 100644
  
                  pos = shape_obj.initial_position()     # mm
                  traj = [pos.copy()]
- 
+                 
                  # 初期方向
                  vec = rng.normal(size=3)
                  vec /= np.linalg.norm(vec) + 1e-12
@@ -99,61 +91,51 @@ index efff94e..2e945e5 100644
                          vec = _perturb_direction(vec, self.constants["deviation"], rng)
                      candidate = pos + vec * step_len
                      if shape == "drop":
++                        base_pos = pos
++                        move_len = step_len
                          status = _io_check_drop(candidate, self.constants)
-                         if status == "outside":
--                            intersect, remain = _line_sphere_intersection(pos, candidate, self.constants["drop_r"])
-+                            intersect, remain = _line_sphere_intersection(
-+                                pos, candidate, self.constants["drop_r"]
-+                            )
-+                            normal = intersect / (np.linalg.norm(intersect) + 1e-12)
-+                            vec = _reflect(vec, normal)
-+                            candidate = intersect + vec * remain
-+                    elif shape == "spot":
-+                        status = _io_check_spot(candidate, self.constants)
-+                        if status == "outside":
-+                            intersect, remain = _line_sphere_intersection(
-+                                pos, candidate, self.constants["spot_r"]
-+                            )
-                             normal = intersect / (np.linalg.norm(intersect) + 1e-12)
-                             vec = _reflect(vec, normal)
-                             candidate = intersect + vec * remain
-+                        elif status == "bottom":
-+                            bottom_z = self.constants["spot_bottom_height"]
-+                            step_vec = vec * step_len
++                        if status == "bottom":
++                            step_vec = vec * move_len
 +                            if abs(step_vec[2]) < 1e-12:
 +                                normal = np.array([0.0, 0.0, 1.0])
 +                                vec = _reflect(vec, normal)
-+                                candidate = pos + vec * step_len
++                                candidate = base_pos + vec * move_len
 +                            else:
-+                                t = (bottom_z - pos[2]) / step_vec[2]
++                                t = (0.0 - base_pos[2]) / step_vec[2]
 +                                t = max(0.0, min(1.0, t))
-+                                intersect = pos + step_vec * t
-+                                remain = step_len * (1.0 - t)
++                                intersect = base_pos + step_vec * t
++                                remain = move_len * (1.0 - t)
 +                                normal = np.array([0.0, 0.0, 1.0])
 +                                vec = _reflect(vec, normal)
-+                                candidate = intersect + vec * remain
-                     pos = candidate
-                     traj.append(pos.copy())
- 
-                     if rep == 0 and i == 0 and j == 0:
-                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
- 
-                 self.trajectory.append(np.vstack(traj))
- 
-         print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, "
-               f"step_len={step_len} mm")
- 
- 
- 
-     import matplotlib.pyplot as plt
- 
-     def plot_trajectories(self, max_sperm=5, save_path=None):
-         """
-         インスタンスのself.trajectory（リスト of N×3 配列）を可視化
-         max_sperm: 表示する精子軌跡の最大本数
-         save_path: Noneなら画面表示のみ、パス指定で保存
-         """
-         import matplotlib.pyplot as plt
-         import numpy as np
-         import os
- 
++                                base_pos = intersect
++                                candidate = base_pos + vec * remain
++                            status = _io_check_drop(candidate, self.constants)
+                         if status == "outside":
+                             intersect, remain = _line_sphere_intersection(
+-                                pos, candidate, self.constants["drop_r"]
++                                base_pos, candidate, self.constants["drop_r"]
+                             )
+                             normal = intersect / (np.linalg.norm(intersect) + 1e-12)
+                             vec = _reflect(vec, normal)
+                             candidate = intersect + vec * remain
+                     elif shape == "spot":
+                         prev = prev_states[i]
+                         status = _io_check_spot(pos, candidate, self.constants, prev)
+                         if status == SpotIO.SPHERE_OUT or status == SpotIO.SPOT_EDGE_OUT:
+                             intersect, remain = _line_sphere_intersection(
+                                 pos, candidate, self.constants["spot_r"]
+                             )
+                             normal = intersect / (np.linalg.norm(intersect) + 1e-12)
+                             vec = _reflect(vec, normal)
+                             candidate = intersect + vec * remain
+                         elif status == SpotIO.BOTTOM_OUT:
+                             bottom_z = self.constants["spot_bottom_height"]
+                             step_vec = vec * step_len
+                             if abs(step_vec[2]) < 1e-12:
+                                 normal = np.array([0.0, 0.0, 1.0])
+                                 vec = _reflect(vec, normal)
+                                 candidate = pos + vec * step_len
+                             else:
+                                 t = (bottom_z - pos[2]) / step_vec[2]
+                                 t = max(0.0, min(1.0, t))
+                                 intersect = pos + step_vec * t

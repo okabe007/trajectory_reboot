@@ -90,9 +90,13 @@ def _egg_position(constants):
 
 
 def _io_check_drop(position: np.ndarray, constants: dict) -> str:
-    """Return 'inside', 'border', or 'outside' for drop shape."""
+    """Return status for drop shape with bottom plane at ``z=0``."""
     r = constants.get("drop_r", 0.0)
     limit = constants.get("limit", 1e-9)
+
+    if position[2] < -limit:
+        return "bottom"
+
     dist = np.linalg.norm(position)
     if dist > r + limit:
         return "outside"
@@ -363,10 +367,28 @@ class SpermSimulation:
                         vec = _perturb_direction(vec, self.constants["deviation"], rng)
                     candidate = pos + vec * step_len
                     if shape == "drop":
+                        base_pos = pos
+                        move_len = step_len
                         status = _io_check_drop(candidate, self.constants)
+                        if status == "bottom":
+                            step_vec = vec * move_len
+                            if abs(step_vec[2]) < 1e-12:
+                                normal = np.array([0.0, 0.0, 1.0])
+                                vec = _reflect(vec, normal)
+                                candidate = base_pos + vec * move_len
+                            else:
+                                t = (0.0 - base_pos[2]) / step_vec[2]
+                                t = max(0.0, min(1.0, t))
+                                intersect = base_pos + step_vec * t
+                                remain = move_len * (1.0 - t)
+                                normal = np.array([0.0, 0.0, 1.0])
+                                vec = _reflect(vec, normal)
+                                base_pos = intersect
+                                candidate = base_pos + vec * remain
+                            status = _io_check_drop(candidate, self.constants)
                         if status == "outside":
                             intersect, remain = _line_sphere_intersection(
-                                pos, candidate, self.constants["drop_r"]
+                                base_pos, candidate, self.constants["drop_r"]
                             )
                             normal = intersect / (np.linalg.norm(intersect) + 1e-12)
                             vec = _reflect(vec, normal)
