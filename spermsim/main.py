@@ -114,6 +114,7 @@ def get_constants_from_gui(selected_data, shape, volume, sperm_conc):
     constants['sampl_rate_hz']     = float(selected_data.get('sampl_rate_hz', 2))
     constants['sim_min']           = float(selected_data.get('sim_min', 10))
     constants['gamete_r']          = float(selected_data.get('gamete_r', 0.15))
+    constants['surface_time']      = float(selected_data.get('surface_time', 0))
     constants['stick_sec']         = int(selected_data.get('stick_sec', 2))
     constants['stick_steps'] = constants['stick_sec'] * constants['sampl_rate_hz']
     constants['step_length'] = constants['vsl'] / constants['sampl_rate_hz']
@@ -862,17 +863,19 @@ def IO_check_cube(temp_position, constants):
     else:
         raise ValueError("Unknown inside/surface/outside combination")
 def IO_check_drop(temp_position, stick_status, constants):
+    if stick_status >= 1:
+        return IOStatus.POLYGON_MODE
+
     distance_from_center = LA.norm(temp_position)
     radius = constants['drop_r']
+
     if distance_from_center > radius + constants['limit']:
         IO_status = IOStatus.SPHERE_OUT
     elif distance_from_center < radius - constants['limit']:
-        if stick_status > 0:
-            IO_status = IOStatus.TEMP_ON_POLYGON
-        else:
-            IO_status = IOStatus.INSIDE
+        IO_status = IOStatus.INSIDE
     else:
         IO_status = IOStatus.BORDER
+
     return IO_status
 def IO_check_spot(base_position, temp_position, constants, IO_status, stick_status=0):
     """
@@ -1291,7 +1294,7 @@ class SpermSimulation:
                 continue
             elif IO_status == IOStatus.SPHERE_OUT:
                 if stick_status == 0:
-                    stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
+                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
                 if shape == "drop":
                     new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_drop(
                         self.trajectory[j, i - 1],
@@ -1309,6 +1312,7 @@ class SpermSimulation:
                 base_position = intersection_point
                 temp_position = new_temp_pos
                 last_vec = temp_position - intersection_point
+                IO_status = IOStatus.POLYGON_MODE
                 continue
             elif IO_status == IOStatus.POLYGON_MODE:
                 self.trajectory[j, i] = temp_position
