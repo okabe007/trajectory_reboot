@@ -912,28 +912,23 @@ def IO_check_spot(base_position, temp_position, constants, IO_status, stick_stat
         return IOStatus.SPHERE_OUT
 
     if bottom_z - limit < z_tip < bottom_z + limit:
-        if xy_dist > bottom_r + limit:
-            return IOStatus.SPOT_EDGE_OUT
-
-        if abs(xy_dist - bottom_r) <= limit:
-            base_xy = np.sqrt(base_position[0] ** 2 + base_position[1] ** 2)
-            base_on_border = (
-                abs(base_position[2] - bottom_z) <= limit and abs(base_xy - bottom_r) <= limit
-            )
-            if base_on_border:
-                if IO_status == IOStatus.POLYGON_MODE:
-                    return IOStatus.POLYGON_MODE
-                return IOStatus.SPOT_BOTTOM if xy_dist < bottom_r else IOStatus.SPOT_EDGE_OUT
-
+        base_xy = np.sqrt(base_position[0] ** 2 + base_position[1] ** 2)
+        start_on_border = (
+            abs(base_position[2] - bottom_z) <= limit and abs(base_xy - bottom_r) <= limit
+        )
+        if start_on_border:
+            if IO_status == IOStatus.POLYGON_MODE:
+                return IOStatus.POLYGON_MODE
+            if xy_dist < bottom_r - limit:
+                return IOStatus.SPOT_BOTTOM
+            if xy_dist > bottom_r + limit:
+                return IOStatus.SPOT_EDGE_OUT
+            return IOStatus.SPOT_BOTTOM if xy_dist < bottom_r else IOStatus.SPOT_EDGE_OUT
+        else:
             if _depth == 0:
                 scaled = base_position + (temp_position - base_position) * 1.2
                 return IO_check_spot(base_position, scaled, constants, IO_status, stick_status, _depth=1)
             return IOStatus.INSIDE
-
-        if xy_dist < bottom_r - limit:
-            if IO_status in [IOStatus.SPOT_EDGE_OUT, IOStatus.POLYGON_MODE] or stick_status > 0:
-                return IOStatus.POLYGON_MODE
-            return IOStatus.SPOT_BOTTOM
 
     return IOStatus.INSIDE
 class SpermSimulation:
