@@ -1,141 +1,17 @@
-diff --git a/core/simulation.py b/core/simulation.py
-index 5ad1aaa..fd71b99 100644
---- a/core/simulation.py
-+++ b/core/simulation.py
-@@ -68,53 +68,57 @@ def _egg_position(constants):
-         spot_bottom_height = constants.get("spot_bottom_height", 0)
-         positions = {
-             "center": (0, 0, (spot_bottom_height + spot_r) / 2),
-             "bottom_center": (0, 0, spot_bottom_height + r),
-             "bottom_edge": (
-                 math.sqrt(max((spot_r - r) ** 2 - (spot_bottom_height + r) ** 2, 0)),
-                 0,
-                 spot_bottom_height + r,
-             ),
-         }
-     elif shape == "ceros":
-         cx = (constants["x_min"] + constants["x_max"]) / 2
-         cy = (constants["y_min"] + constants["y_max"]) / 2
-         cz = (constants["z_min"] + constants["z_max"]) / 2
-         positions = {"center": (cx, cy, cz), "bottom_center": (cx, cy, cz), "bottom_edge": (cx, cy, cz)}
-     else:
-         raise RuntimeError(f"Unknown shape '{shape}'")
- 
-     if loc not in positions:
-         raise RuntimeError(f"Invalid egg_localization '{loc}' for shape '{shape}'")
- 
-     return positions[loc]
- 
- 
- def _io_check_drop(position: np.ndarray, constants: dict) -> str:
--    """Return 'inside', 'border', or 'outside' for drop shape."""
-+    """Return status for drop shape with bottom plane at ``z=0``."""
-     r = constants.get("drop_r", 0.0)
-     limit = constants.get("limit", 1e-9)
+diff --git a//dev/null b/tests/test_drop.py
+index 0000000..a8f3d1d 100644
+--- a//dev/null
++++ b/tests/test_drop.py
+@@ -0,0 +1,12 @@
++import numpy as np
++import sys
++from pathlib import Path
++sys.path.append(str(Path(__file__).resolve().parents[1]))
 +
-+    if position[2] < -limit:
-+        return "bottom"
++from core.simulation import _io_check_drop
 +
-     dist = np.linalg.norm(position)
-     if dist > r + limit:
-         return "outside"
-     elif dist < r - limit:
-         return "inside"
-     else:
-         return "border"
- 
- 
- class SpotIO:
-     """Status constants for spot geometry."""
- 
-     INSIDE = "inside"
-     BORDER = "border"
-     SPHERE_OUT = "sphere_out"
-     BOTTOM_OUT = "bottom_out"
-     SPOT_EDGE_OUT = "spot_edge_out"
-     POLYGON_MODE = "polygon_mode"
-     SPOT_BOTTOM = "spot_bottom"
- 
- 
- def _io_check_spot(
-     base_position: np.ndarray,
-     temp_position: np.ndarray,
-     constants: dict,
-diff --git a/core/simulation.py b/core/simulation.py
-index 5ad1aaa..fd71b99 100644
---- a/core/simulation.py
-+++ b/core/simulation.py
-@@ -341,54 +345,72 @@ class SpermSimulation:
-                 rng = np.random.default_rng(seed_int)
-             except Exception:
-                 rng = np.random.default_rng()
-         else:
-             rng = np.random.default_rng()
- 
-         self.trajectory = []   # ← 毎 run() でリセット
-         prev_states = [SpotIO.INSIDE for _ in range(number_of_sperm)]
- 
-         # ---- ループ ---------------------------------------------------
-         for rep in range(int(sim_repeat)):
-             for i in range(number_of_sperm):
- 
-                 pos = shape_obj.initial_position()     # mm
-                 traj = [pos.copy()]
-                 
-                 # 初期方向
-                 vec = rng.normal(size=3)
-                 vec /= np.linalg.norm(vec) + 1e-12
- 
-                 for j in range(number_of_steps):
-                     if j > 0:
-                         vec = _perturb_direction(vec, self.constants["deviation"], rng)
-                     candidate = pos + vec * step_len
-                     if shape == "drop":
-+                        base_pos = pos
-+                        move_len = step_len
-                         status = _io_check_drop(candidate, self.constants)
-+                        if status == "bottom":
-+                            step_vec = vec * move_len
-+                            if abs(step_vec[2]) < 1e-12:
-+                                normal = np.array([0.0, 0.0, 1.0])
-+                                vec = _reflect(vec, normal)
-+                                candidate = base_pos + vec * move_len
-+                            else:
-+                                t = (0.0 - base_pos[2]) / step_vec[2]
-+                                t = max(0.0, min(1.0, t))
-+                                intersect = base_pos + step_vec * t
-+                                remain = move_len * (1.0 - t)
-+                                normal = np.array([0.0, 0.0, 1.0])
-+                                vec = _reflect(vec, normal)
-+                                base_pos = intersect
-+                                candidate = base_pos + vec * remain
-+                            status = _io_check_drop(candidate, self.constants)
-                         if status == "outside":
-                             intersect, remain = _line_sphere_intersection(
--                                pos, candidate, self.constants["drop_r"]
-+                                base_pos, candidate, self.constants["drop_r"]
-                             )
-                             normal = intersect / (np.linalg.norm(intersect) + 1e-12)
-                             vec = _reflect(vec, normal)
-                             candidate = intersect + vec * remain
-                     elif shape == "spot":
-                         prev = prev_states[i]
-                         status = _io_check_spot(pos, candidate, self.constants, prev)
-                         if status == SpotIO.SPHERE_OUT or status == SpotIO.SPOT_EDGE_OUT:
-                             intersect, remain = _line_sphere_intersection(
-                                 pos, candidate, self.constants["spot_r"]
-                             )
-                             normal = intersect / (np.linalg.norm(intersect) + 1e-12)
-                             vec = _reflect(vec, normal)
-                             candidate = intersect + vec * remain
-                         elif status == SpotIO.BOTTOM_OUT:
-                             bottom_z = self.constants["spot_bottom_height"]
-                             step_vec = vec * step_len
-                             if abs(step_vec[2]) < 1e-12:
-                                 normal = np.array([0.0, 0.0, 1.0])
-                                 vec = _reflect(vec, normal)
-                                 candidate = pos + vec * step_len
-                             else:
-                                 t = (bottom_z - pos[2]) / step_vec[2]
-                                 t = max(0.0, min(1.0, t))
-                                 intersect = pos + step_vec * t
++
++def test_drop_bottom_status():
++    constants = {"drop_r": 1.0, "limit": 1e-9}
++    pos = np.array([0.0, 0.0, -0.1])
++    assert _io_check_drop(pos, constants) == "bottom"
