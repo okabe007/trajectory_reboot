@@ -1,181 +1,8 @@
 diff --git a/spermsim/main.py b/spermsim/main.py
-index 98e6173..6787d74 100644
+index 6787d74..89b008b 100644
 --- a/spermsim/main.py
 +++ b/spermsim/main.py
-@@ -92,50 +92,51 @@ def get_program_version():
-     スクリプトファイル名をバージョン情報として返す。
-     Jupyterや対話モードの場合は 'interactive' として返す。
-     """
-     try:
-         file_name = os.path.basename(__file__)
-     except NameError:
-         file_name = "interactive"
-     version = f"{file_name}"
-     return version
- 
- def get_constants_from_gui(selected_data, shape, volume, sperm_conc):
-     """
-     GUI から受け取った選択データと shape, volume, sperm_conc を元に、
-     シミュレーション定数をまとめた辞書を作成して返す。
-     """
-     constants = {}
-     constants['shape'] = shape.lower()
-     constants['volume'] = float(volume)
-     constants['sperm_conc'] = int(sperm_conc)
-     constants['spot_angle']        = float(selected_data.get('spot_angle', 60))
-     constants['vsl']               = float(selected_data.get('vsl', 0.13))
-     constants['deviation']         = float(selected_data.get('deviation', 0.04))
-     constants['sampl_rate_hz']     = float(selected_data.get('sampl_rate_hz', 2))
-     constants['sim_min']           = float(selected_data.get('sim_min', 10))
-     constants['gamete_r']          = float(selected_data.get('gamete_r', 0.15))
-+    constants['surface_time']      = float(selected_data.get('surface_time', 0))
-     constants['stick_sec']         = int(selected_data.get('stick_sec', 2))
-     constants['stick_steps'] = constants['stick_sec'] * constants['sampl_rate_hz']
-     constants['step_length'] = constants['vsl'] / constants['sampl_rate_hz']
-     constants['limit'] = 1e-10
-     egg_localization = selected_data.get('egg_localization', 'bottom_center').strip()
-     constants['egg_localization'] = egg_localization
-     constants['initial_direction']    = selected_data.get('initial_direction', 'random').strip()
-     constants['initial_stick'] = int(selected_data.get('initial_stick', 0))
-     constants['seed_number']          = selected_data.get('seed_number', None)
-     constants['N_repeat']             = int(selected_data.get('n_repeat', 1))
-     outputs = selected_data.get('outputs', [])
-     constants['draw_trajectory'] = 'yes' if 'graph' in outputs else 'no'
-     constants['make_movie']      = 'yes' if 'movie' in outputs else 'no'
-     if constants['seed_number'] and str(constants['seed_number']).lower() != IOStatus.NONE:
-         np.random.seed(int(constants['seed_number']))
-     constants['analysis_type'] = selected_data.get('analysis_type', "simulation")
- 
-     # ★ここで派生値をtools/derived_constants.pyで一元計算
-     from tools.derived_constants import calculate_derived_constants
-     constants = calculate_derived_constants(constants)
- 
-     return constants
- 
- 
- def placement_of_eggs(constants):
-diff --git a/spermsim/main.py b/spermsim/main.py
-index 98e6173..6787d74 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -840,61 +841,63 @@ def IO_check_cube(temp_position, constants):
-                 vy = y_max
-         if z_class == IOStatus.SURFACE:
-             if abs(z - z_min) <= constants['limit']:
-                 vz = z_min
-             else:
-                 vz = z_max
-         elif z_class == IOStatus.OUTSIDE:
-             if z < z_min - constants['limit']:
-                 vz = z_min
-             else:
-                 vz = z_max
-         vertex_coords = np.array([vx, vy, vz], dtype=float)
-         return IOStatus.VERTEX_OUT, vertex_coords
-     elif (
-         (inside_count == 1 and surface_count == 1 and outside_count == 1) or
-         (inside_count == 0 and surface_count == 1 and outside_count == 2)
-     ):
-         return IOStatus.EDGE_OUT, None
-     elif inside_count == 0 and surface_count == 0 and outside_count == 3:
-         return IOStatus.SURFACE_OUT, None
-     elif inside_count == 0 and surface_count == 3 and outside_count == 0:
-         return IOStatus.BORDER, None
-     else:
-         raise ValueError("Unknown inside/surface/outside combination")
- def IO_check_drop(temp_position, stick_status, constants):
-+    if stick_status >= 1:
-+        return IOStatus.POLYGON_MODE
-+
-     distance_from_center = LA.norm(temp_position)
-     radius = constants['drop_r']
-+
-     if distance_from_center > radius + constants['limit']:
-         IO_status = IOStatus.SPHERE_OUT
-     elif distance_from_center < radius - constants['limit']:
--        if stick_status > 0:
--            IO_status = IOStatus.TEMP_ON_POLYGON
--        else:
--            IO_status = IOStatus.INSIDE
-+        IO_status = IOStatus.INSIDE
-     else:
-         IO_status = IOStatus.BORDER
-+
-     return IO_status
- def IO_check_spot(base_position, temp_position, constants, IO_status, stick_status=0):
-     """
-     Spot形状におけるIO判定。
-     後者の「うまくいくプログラム」と同一仕様になるように修正。
-     """
-     radius   = constants['radius']
-     bottom_z = constants['spot_bottom_height']
-     bottom_r = constants['spot_bottom_r']
-     z_tip = temp_position[2]
-     r_tip = LA.norm(temp_position)                    
-     xy_dist = np.sqrt(temp_position[0]**2 + temp_position[1]**2)
-     if z_tip > bottom_z + constants['limit']:
-         if r_tip > radius + constants['limit']:
-             return IOStatus.SPHERE_OUT
-         elif r_tip < radius - constants['limit']:
-             if stick_status > 0:
-                 return IOStatus.TEMP_ON_POLYGON
-             else:
-                 return IOStatus.INSIDE
-         else:
-             return IOStatus.BORDER
-     elif z_tip < bottom_z - constants['limit']:
-         denom = (temp_position[2] - base_position[2])
-         t = (bottom_z - base_position[2]) / denom
-diff --git a/spermsim/main.py b/spermsim/main.py
-index 98e6173..6787d74 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -1269,80 +1272,86 @@ class SpermSimulation:
-                     temp_position = base_position + new_vec
-                 else:            
-                     self.trajectory[j, i] = temp_position
-                     base_position = self.trajectory[j, i]
-                     remaining_distance = constants['step_length']
-                     if stick_status > 0:
-                         stick_status -= 1
-                     if len(intersection_point) != 0:
-                         last_vec = temp_position - intersection_point
-                         intersection_point = np.array([])
-                     else:
-                         last_vec = self.trajectory[j, i] - self.trajectory[j, i - 1]
-                     if LA.norm(last_vec) < constants['limit']:
-                         raise RuntimeError("last vec is too short!")
-                     new_vec = prepare_new_vector(
-                         last_vec, constants,
-                         boundary_type="free",
-                         stick_status=stick_status,
-                         inward_dir=None
-                     )
-                     temp_position = self.trajectory[j, i] + new_vec
-                 i += 1
-                 continue
-             elif IO_status == IOStatus.SPHERE_OUT:
-                 if stick_status == 0:
--                    stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
-+                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
-                 if shape == "drop":
-                     new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_drop(
-                         self.trajectory[j, i - 1],
-                         remaining_distance,
-                         temp_position,
-                         constants,
-                     )
-                 else:
-                     new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_sphere(
-                         self.trajectory[j, i - 1],
-                         remaining_distance,
-                         temp_position,
-                         constants,
-                     )
-                 base_position = intersection_point
-                 temp_position = new_temp_pos
-                 last_vec = temp_position - intersection_point
-+                IO_status = IOStatus.POLYGON_MODE
+@@ -1316,88 +1316,88 @@ class SpermSimulation:
                  continue
              elif IO_status == IOStatus.POLYGON_MODE:
                  self.trajectory[j, i] = temp_position
@@ -185,17 +12,14 @@ index 98e6173..6787d74 100644
                      intersection_point = np.array([])
                  else:
                      last_vec = self.trajectory[j, i] - self.trajectory[j, i - 1]
--                new_temp_position, new_last_vec, updated_stick, next_state = self.bottom_edge_mode(
--                    base_position, last_vec, stick_status, constants
--                )
-+                if shape == "drop":
-+                    new_temp_position, new_last_vec, updated_stick, next_state = self.drop_polygon_move(
-+                        base_position, last_vec, stick_status, constants
-+                    )
-+                else:
-+                    new_temp_position, new_last_vec, updated_stick, next_state = self.bottom_edge_mode(
-+                        base_position, last_vec, stick_status, constants
-+                    )
+                 if shape == "drop":
+                     new_temp_position, new_last_vec, updated_stick, next_state = self.drop_polygon_move(
+                         base_position, last_vec, stick_status, constants
+                     )
+                 else:
+                     new_temp_position, new_last_vec, updated_stick, next_state = self.bottom_edge_mode(
+                         base_position, last_vec, stick_status, constants
+                     )
                  temp_position = new_temp_position
                  last_vec = new_last_vec
                  stick_status = updated_stick
@@ -204,7 +28,8 @@ index 98e6173..6787d74 100644
                  continue
              elif IO_status == IOStatus.SPOT_EDGE_OUT:
                  if stick_status == 0:
-                     stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
+-                    stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
++                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
                  (new_temp_pos,
                   intersection_point,
                   remaining_distance,
@@ -217,112 +42,56 @@ index 98e6173..6787d74 100644
                  continue
              elif IO_status == IOStatus.BOTTOM_OUT:
                  if stick_status == 0:
-                     stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
+-                    stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
++                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
                  (new_temp_pos,
                   intersection_point,
                   remaining_distance) = cut_and_bend_bottom(
-diff --git a/spermsim/main.py b/spermsim/main.py
-index 98e6173..6787d74 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -1479,50 +1488,100 @@ class SpermSimulation:
-                     rot = rotation_matrix_from_vectors([0, 0, 1], axis)
-                     v_local = np.array([x_local, y_local, z_local])
-                     return rot.dot(v_local)
-                 center_axis = (plane_normal + sphere_normal_3d) / 2
-                 center_axis_norm = np.linalg.norm(center_axis)
-                 if center_axis_norm < constants['limit']:
-                     center_axis = plane_normal
-                     center_axis_norm = 1.0
-                 center_axis /= center_axis_norm
-                 open_angle = angle_plane_sphere
-                 random_3d_dir = sample_vector_in_cone(center_axis, open_angle)
-                 last_vec_corrected = random_3d_dir * new_remaining
-                 new_temp_position = intersection_point + last_vec_corrected
-                 new_last_vec = new_temp_position - intersection_point
-         else:
-             new_temp_position = candidate_position
-             new_last_vec = last_vec
-         new_stick_status = stick_status
-         if new_stick_status > 0:
-             new_stick_status -= 1
-         if new_stick_status <= 0:
-             new_state = IOStatus.INSIDE
-         else:
-             new_state = IOStatus.BOTTOM_EDGE_MODE
-         return new_temp_position, new_last_vec, new_stick_status, new_state
-+
-+    def drop_polygon_move(self, base_position, last_vec, stick_status, constants):
-+        """Return next step while sliding along the drop surface."""
-+
-+        step_len = constants['step_length']
-+        dev_mag = constants['deviation']
-+        limit = constants['limit']
-+
-+        normal = base_position / (LA.norm(base_position) + 1e-12)
-+        vec_norm = LA.norm(last_vec)
-+        if vec_norm < limit:
-+            if abs(normal[0]) < 0.9:
-+                tangent = np.cross(normal, [1.0, 0.0, 0.0])
-+            else:
-+                tangent = np.cross(normal, [0.0, 1.0, 0.0])
-+            vec_norm = LA.norm(tangent)
-+            v_base = tangent / (vec_norm + 1e-12)
-+        else:
-+            v_base = last_vec / vec_norm
-+            v_base = v_base - np.dot(v_base, normal) * normal
-+            base_norm = LA.norm(v_base)
-+            if base_norm < limit:
-+                if abs(normal[0]) < 0.9:
-+                    tangent = np.cross(normal, [1.0, 0.0, 0.0])
-+                else:
-+                    tangent = np.cross(normal, [0.0, 1.0, 0.0])
-+                v_base = tangent / (LA.norm(tangent) + 1e-12)
-+            else:
-+                v_base /= base_norm
-+
-+        u = v_base
-+        v = np.cross(normal, u)
-+        v /= LA.norm(v) + 1e-12
-+
-+        theta = np.random.uniform(-np.pi, np.pi)
-+        deviation_vec = dev_mag * (np.cos(theta) * u + np.sin(theta) * v)
-+
-+        final_dir = v_base + deviation_vec
-+        final_dir /= LA.norm(final_dir) + 1e-12
-+
-+        new_last_vec = final_dir * step_len
-+        new_temp_position = base_position + new_last_vec
-+
-+        new_stick_status = stick_status - 1 if stick_status > 0 else 0
-+        if new_stick_status <= 0:
-+            next_state = IOStatus.INSIDE
-+        else:
-+            next_state = IOStatus.POLYGON_MODE
-+
-+        return new_temp_position, new_last_vec, new_stick_status, next_state
- class SpermPlot:
-     already_saved_global_flag = False
- 
-     def __init__(self, simulation):
-         self.simulation = simulation
-         self.constants  = self.simulation.constants
-         self.colors     = self.simulation.vec_colors
- 
-         keys = ['x_min', 'x_max', 'y_min', 'y_max', 'z_min', 'z_max']
-         missing = [k for k in keys if self.constants.get(k) is None]
-         if missing:
-             raise RuntimeError(
-                 f"constantsに範囲値未セット: {missing} → tools/derived_constants.pyを修正"
-             )
-         # 一括代入
-         (self.x_min, self.x_max,
-          self.y_min, self.y_max,
-          self.z_min, self.z_max) = (self.constants[k] for k in keys)
- 
-     def set_ax_3D(self, ax):
-         ax.set_xlim(self.x_min, self.x_max)
-         ax.set_ylim(self.y_min, self.y_max)
-         ax.set_zlim(self.z_min, self.z_max)
-         ax.set_box_aspect([
-             self.x_max - self.x_min,
+                      self, IO_status, base_position, temp_position, remaining_distance, constants
+                 )
+                 base_position = intersection_point
+                 temp_position = new_temp_pos
+                 last_vec = temp_position - intersection_point
+                 continue
+             elif IO_status in [IOStatus.SURFACE_OUT, IOStatus.EDGE_OUT]:
+                 if stick_status == 0:
+-                    stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
++                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
+                 (new_temp_pos,
+                  intersection_point,
+                  remaining_distance) = cut_and_bend_cube(
+                      self, IO_status, base_position, temp_position, remaining_distance, constants
+                 )
+                 base_position = intersection_point
+                 temp_position = new_temp_pos
+                 last_vec = temp_position - intersection_point
+                 continue
+             elif IO_status == IOStatus.VERTEX_OUT:
+                 if stick_status == 0:
+-                    stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
++                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
+                 (intersection_point,
+                  new_temp_pos,
+                  remaining_distance) = cut_and_bend_vertex(
+                      vertex_point, base_position, remaining_distance, constants
+                 )
+                 base_position = intersection_point
+                 temp_position = new_temp_pos
+                 last_vec = temp_position - intersection_point
+                 continue
+     def bottom_edge_mode(self, base_position, last_vec, stick_status, constants):
+         """
+         底面を這いつつ底面の円周に当たった時の処理。
+         後者コードを反映して修正。 polygon_mode から呼ばれる。
+         """
+         z_floor = constants['spot_bottom_height']
+         r_edge  = constants['spot_bottom_r']
+         R_spot  = constants['radius']
+         candidate_position = base_position + last_vec
+         candidate_position[2] = z_floor
+         dist2 = candidate_position[0]**2 + candidate_position[1]**2
+         radius2 = r_edge**2
+         if dist2 > radius2:
+             x0, y0 = base_position[0], base_position[1]
+             x1, y1 = candidate_position[0], candidate_position[1]
+             dx = x1 - x0

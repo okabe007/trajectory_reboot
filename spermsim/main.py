@@ -1338,7 +1338,7 @@ class SpermSimulation:
                 continue
             elif IO_status == IOStatus.SPOT_EDGE_OUT:
                 if stick_status == 0:
-                    stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
+                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
                 (new_temp_pos,
                  intersection_point,
                  remaining_distance,
@@ -1351,7 +1351,7 @@ class SpermSimulation:
                 continue
             elif IO_status == IOStatus.BOTTOM_OUT:
                 if stick_status == 0:
-                    stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
+                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
                 (new_temp_pos,
                  intersection_point,
                  remaining_distance) = cut_and_bend_bottom(
@@ -1363,7 +1363,7 @@ class SpermSimulation:
                 continue
             elif IO_status in [IOStatus.SURFACE_OUT, IOStatus.EDGE_OUT]:
                 if stick_status == 0:
-                    stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
+                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
                 (new_temp_pos,
                  intersection_point,
                  remaining_distance) = cut_and_bend_cube(
@@ -1375,7 +1375,7 @@ class SpermSimulation:
                 continue
             elif IO_status == IOStatus.VERTEX_OUT:
                 if stick_status == 0:
-                    stick_status = int(constants['stick_sec'] * constants['sampl_rate_hz'])
+                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
                 (intersection_point,
                  new_temp_pos,
                  remaining_distance) = cut_and_bend_vertex(
