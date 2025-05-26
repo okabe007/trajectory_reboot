@@ -877,48 +877,64 @@ def IO_check_drop(temp_position, stick_status, constants):
         IO_status = IOStatus.BORDER
 
     return IO_status
-def IO_check_spot(base_position, temp_position, constants, IO_status, stick_status=0):
-    """
-    Spot形状におけるIO判定。
-    後者の「うまくいくプログラム」と同一仕様になるように修正。
-    """
+def IO_check_spot(base_position, temp_position, constants, IO_status, stick_status=0, _depth=0):
+    """Spot 形状における IO 判定。``_depth`` は再帰回数の制御用。"""
+
     radius   = constants['radius']
     bottom_z = constants['spot_bottom_height']
     bottom_r = constants['spot_bottom_r']
+    limit    = constants['limit']
+
     z_tip = temp_position[2]
-    r_tip = LA.norm(temp_position)                    
-    xy_dist = np.sqrt(temp_position[0]**2 + temp_position[1]**2)
-    if z_tip > bottom_z + constants['limit']:
-        if r_tip > radius + constants['limit']:
+    r_tip = LA.norm(temp_position)
+    xy_dist = np.sqrt(temp_position[0] ** 2 + temp_position[1] ** 2)
+
+    if z_tip > bottom_z + limit:
+        if r_tip > radius + limit:
             return IOStatus.SPHERE_OUT
-        elif r_tip < radius - constants['limit']:
-            if stick_status > 0:
-                return IOStatus.TEMP_ON_POLYGON
-            else:
-                return IOStatus.INSIDE
-        else:
-            return IOStatus.BORDER
-    elif z_tip < bottom_z - constants['limit']:
-        denom = (temp_position[2] - base_position[2])
+        if r_tip < radius - limit:
+            return IOStatus.TEMP_ON_POLYGON if stick_status > 0 else IOStatus.INSIDE
+
+        if _depth == 0:
+            scaled = base_position + (temp_position - base_position) * 1.2
+            return IO_check_spot(base_position, scaled, constants, IO_status, stick_status, _depth=1)
+        return IOStatus.INSIDE
+
+    if z_tip < bottom_z - limit:
+        denom = temp_position[2] - base_position[2]
         t = (bottom_z - base_position[2]) / denom
         if t < 0 or t > 1:
             return IOStatus.SPHERE_OUT
-        intersect_xy = base_position[:2] + t*(temp_position[:2] - base_position[:2])
-        dist_xy = np.sqrt(intersect_xy[0]**2 + intersect_xy[1]**2)
-        if dist_xy < bottom_r + constants['limit']:
+        intersect_xy = base_position[:2] + t * (temp_position[:2] - base_position[:2])
+        dist_xy = np.sqrt(intersect_xy[0] ** 2 + intersect_xy[1] ** 2)
+        if dist_xy < bottom_r + limit:
             return IOStatus.BOTTOM_OUT
-        else:
-            return IOStatus.SPHERE_OUT
-    elif bottom_z - constants['limit'] < z_tip < bottom_z + constants['limit']:
-        if xy_dist > bottom_r + constants['limit']:
+        return IOStatus.SPHERE_OUT
+
+    if bottom_z - limit < z_tip < bottom_z + limit:
+        if xy_dist > bottom_r + limit:
             return IOStatus.SPOT_EDGE_OUT
-        elif abs(xy_dist - bottom_r) <= constants['limit']:
-            return IOStatus.BORDER
-        elif xy_dist < bottom_r - constants['limit']:
+
+        if abs(xy_dist - bottom_r) <= limit:
+            base_xy = np.sqrt(base_position[0] ** 2 + base_position[1] ** 2)
+            base_on_border = (
+                abs(base_position[2] - bottom_z) <= limit and abs(base_xy - bottom_r) <= limit
+            )
+            if base_on_border:
+                if IO_status == IOStatus.POLYGON_MODE:
+                    return IOStatus.POLYGON_MODE
+                return IOStatus.SPOT_BOTTOM if xy_dist < bottom_r else IOStatus.SPOT_EDGE_OUT
+
+            if _depth == 0:
+                scaled = base_position + (temp_position - base_position) * 1.2
+                return IO_check_spot(base_position, scaled, constants, IO_status, stick_status, _depth=1)
+            return IOStatus.INSIDE
+
+        if xy_dist < bottom_r - limit:
             if IO_status in [IOStatus.SPOT_EDGE_OUT, IOStatus.POLYGON_MODE] or stick_status > 0:
                 return IOStatus.POLYGON_MODE
-            else:
-                return IOStatus.SPOT_BOTTOM
+            return IOStatus.SPOT_BOTTOM
+
     return IOStatus.INSIDE
 class SpermSimulation:
     def initialize_thickness(self):
@@ -1152,30 +1168,12 @@ class SpermSimulation:
             elif shape == "drop":
                 new_IO_status = IO_check_drop(temp_position, stick_status, constants)
                 vertex_point = None
-                if new_IO_status == IOStatus.BORDER:
-                    vec = temp_position - base_position
-                    vec_length = np.linalg.norm(vec)
-                    if vec_length > constants['limit']:
-                        adjusted_vec = vec * 0.99
-                        temp_position = base_position + adjusted_vec
-                        new_IO_status = IO_check_drop(temp_position, stick_status, constants)
-                    if new_IO_status == IOStatus.BORDER:
-                        raise RuntimeError("drop: rethink logic for border")
             elif shape == "spot":
                 prev_stat = self.prev_IO_status[j]
                 if prev_stat is None:
                     prev_stat = "none"
                 new_IO_status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
                 vertex_point = None
-                if new_IO_status == IOStatus.BORDER:
-                    vec = temp_position - base_position
-                    vec_length = np.linalg.norm(vec)
-                    if vec_length > constants['limit']:
-                        adjusted_vec = vec * 0.99
-                        temp_position = base_position + adjusted_vec
-                        new_IO_status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
-                    if new_IO_status == IOStatus.BORDER:
-                        raise RuntimeError("rethink logic 3")
             else:
                 new_IO_status = "inside"
                 vertex_point = None
@@ -2388,10 +2386,6 @@ def _detect_boundary(shape, base_position, temp_position, stick_status, constant
 
     if shape == "spot":
         status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
-        if status == IOStatus.BORDER:
-            vec = temp_position - base_position
-            temp_position = base_position + vec * 0.99
-            status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
         return status, None, temp_position
 
     return IOStatus.INSIDE, None, temp_position
