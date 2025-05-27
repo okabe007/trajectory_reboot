@@ -1746,13 +1746,8 @@ class SpermTrajectoryVisualizer:
                 shape_v = np.linspace(0, theta_max_rad, 60)
                 sx = spot_r * np.outer(np.sin(shape_v), np.cos(shape_u))
                 sy = spot_r * np.outer(np.sin(shape_v), np.sin(shape_u))
-<<<<<<< ours
-                sz = spot_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
-                ax.plot_surface(sx, sy, sz, color='pink', alpha=0.15)
-=======
                 sz = bottom_h + spot_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
                 ax.plot_surface(sx, sy, sz, color='pink', alpha=0.15, edgecolor='none')
->>>>>>> theirs
             elif shape == "drop":
                 drop_r = self.constants['drop_r']
                 shape_u = np.linspace(0, 2*np.pi, 60)
@@ -1760,22 +1755,14 @@ class SpermTrajectoryVisualizer:
                 sx = drop_r * np.outer(np.sin(shape_v), np.cos(shape_u))
                 sy = drop_r * np.outer(np.sin(shape_v), np.sin(shape_u))
                 sz = drop_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
-<<<<<<< ours
-                ax.plot_surface(sx, sy, sz, color='pink', alpha=0.15)
-=======
                 ax.plot_surface(sx, sy, sz, color='pink', alpha=0.15, edgecolor='none')
->>>>>>> theirs
             ax.plot_surface(
                 ex,
                 ey,
                 ez,
                 color='yellow',
                 alpha=0.2,
-<<<<<<< ours
-                edgecolors='gray',
-=======
                 edgecolor='gray',
->>>>>>> theirs
                 linewidth=0.5,
             )
             lines = [ax.plot([], [], [], lw=2)[0] for _ in range(num_sperm)]
