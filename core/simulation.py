@@ -127,14 +127,14 @@ class SpotIO:
     SPOT_BOTTOM = "spot_bottom"
 
 
-def _io_check_spot(
+def _spot_status_check(
     base_position: np.ndarray,
     temp_position: np.ndarray,
     constants: dict,
     prev_stat: str = "inside",
     stick_status: int = 0,
 ) -> str:
-    """Return detailed IO status for spot shape."""
+    """Return IO status for spot shape without modifying the position."""
 
     radius = constants.get("spot_r", constants.get("radius", 0.0))
     bottom_z = constants.get("spot_bottom_height", 0.0)
@@ -176,6 +176,84 @@ def _io_check_spot(
             return SpotIO.SPOT_BOTTOM
 
     return SpotIO.INSIDE
+
+
+def _io_check_spot(
+    base_position: np.ndarray,
+    temp_position: np.ndarray,
+    constants: dict,
+    prev_stat: str = "inside",
+    stick_status: int = 0,
+) -> tuple[np.ndarray, str, bool]:
+    """Return corrected position, final status and bottom hit flag.
+
+    The candidate position is repeatedly adjusted whenever it exits the
+    spherical cap so that the returned position lies inside.  If the
+    trajectory hits the bottom plane during this process ``bottom_hit`` is
+    set to ``True``.
+    """
+
+    candidate = temp_position.copy()
+    pos = base_position.copy()
+    status = _spot_status_check(pos, candidate, constants, prev_stat, stick_status)
+    bottom_hit = False
+
+    step_vec = candidate - pos
+    step_len = np.linalg.norm(step_vec)
+    if step_len < 1e-12:
+        return candidate, status, bottom_hit
+    vec = step_vec / step_len
+
+    for _ in range(10):
+        if status in (
+            SpotIO.INSIDE,
+            SpotIO.BORDER,
+            SpotIO.SPOT_BOTTOM,
+            SpotIO.POLYGON_MODE,
+        ):
+            break
+
+        if status in (SpotIO.SPHERE_OUT, SpotIO.SPOT_EDGE_OUT):
+            intersect, remain = _line_sphere_intersection(pos, candidate, constants["spot_r"])
+            normal = intersect / (np.linalg.norm(intersect) + 1e-12)
+            vec = _reflect(vec, normal)
+            pos = intersect
+            step_len = remain
+            candidate = pos + vec * step_len
+
+        elif status == SpotIO.BOTTOM_OUT:
+            bottom_hit = True
+            bottom_z = constants.get("spot_bottom_height", 0.0)
+            step_vec = candidate - pos
+            if abs(step_vec[2]) < 1e-12:
+                proj = step_vec.copy()
+                proj[2] = 0.0
+                norm = np.linalg.norm(proj)
+                if norm < 1e-12:
+                    proj = np.array([1.0, 0.0, 0.0]) * step_len
+                    norm = step_len
+                vec = proj / norm
+                candidate = pos + vec * step_len
+            else:
+                t = (bottom_z - pos[2]) / step_vec[2]
+                t = max(0.0, min(1.0, t))
+                intersect = pos + step_vec * t
+                remain = step_len * (1.0 - t)
+                proj_dir = vec.copy()
+                proj_dir[2] = 0.0
+                norm = np.linalg.norm(proj_dir)
+                if norm < 1e-12:
+                    proj_dir = np.array([1.0, 0.0, 0.0])
+                    norm = 1.0
+                proj_dir /= norm
+                pos = intersect
+                vec = proj_dir
+                step_len = remain
+                candidate = pos + vec * step_len
+
+        status = _spot_status_check(pos, candidate, constants, prev_stat, stick_status)
+
+    return candidate, status, bottom_hit
 
 
 def _line_sphere_intersection(p0: np.ndarray, p1: np.ndarray, r: float) -> tuple[np.ndarray, float]:
@@ -412,46 +490,17 @@ class SpermSimulation:
                             candidate = intersect + vec * remain
                     elif shape == "spot":
                         prev = prev_states[i]
-                        status = _io_check_spot(pos, candidate, self.constants, prev)
-                        if status == SpotIO.SPHERE_OUT or status == SpotIO.SPOT_EDGE_OUT:
-                            intersect, remain = _line_sphere_intersection(
-                                pos, candidate, self.constants["spot_r"]
-                            )
-                            normal = intersect / (np.linalg.norm(intersect) + 1e-12)
-                            vec = _reflect(vec, normal)
-                            candidate = intersect + vec * remain
-                        elif status == SpotIO.BOTTOM_OUT:
+                        candidate, status, bottom_hit = _io_check_spot(
+                            pos, candidate, self.constants, prev, stick_statuses[i]
+                        )
+                        vec = (candidate - pos) / step_len
+                        if bottom_hit:
                             bottom_modes[i] = True
                             if stick_statuses[i] == 0:
                                 stick_statuses[i] = int(
                                     self.constants["surface_time"]
                                     / self.constants["sampl_rate_hz"]
                                 )
-                            bottom_z = self.constants["spot_bottom_height"]
-                            step_vec = vec * step_len
-                            if abs(step_vec[2]) < 1e-12:
-                                proj = step_vec.copy()
-                                proj[2] = 0.0
-                                norm = np.linalg.norm(proj)
-                                if norm < 1e-12:
-                                    proj = np.array([1.0, 0.0, 0.0]) * step_len
-                                    norm = step_len
-                                candidate = pos + proj / norm * step_len
-                                vec = proj / norm
-                            else:
-                                t = (bottom_z - pos[2]) / step_vec[2]
-                                t = max(0.0, min(1.0, t))
-                                intersect = pos + step_vec * t
-                                remain = step_len * (1.0 - t)
-                                proj_dir = vec.copy()
-                                proj_dir[2] = 0.0
-                                norm = np.linalg.norm(proj_dir)
-                                if norm < 1e-12:
-                                    proj_dir = np.array([1.0, 0.0, 0.0])
-                                    norm = 1.0
-                                proj_dir /= norm
-                                candidate = intersect + proj_dir * remain
-                                vec = (candidate - pos) / step_len
 
                     disp_len = np.linalg.norm(candidate - pos)
                     max_len = step_len
