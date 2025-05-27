@@ -105,23 +105,29 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
         ax.set_title(title)
         if shape == 'drop' and drop_r > 0:
             ax.add_patch(
-                patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1)
+                patches.Circle((0, 0), drop_r, ec='none', facecolor='pink', alpha=0.1)
             )
         elif shape == 'cube':
             width = xlim[1] - xlim[0]
             height = ylim[1] - ylim[0]
             ax.add_patch(
-                patches.Rectangle((xlim[0], ylim[0]), width, height,
-                                  ec='none', facecolor='red', alpha=0.1)
+                patches.Rectangle(
+                    (xlim[0], ylim[0]),
+                    width,
+                    height,
+                    ec='none',
+                    facecolor='pink',
+                    alpha=0.1,
+                )
             )
         elif shape == 'spot' and spot_r > 0:
             if xlabel == 'X' and ylabel == 'Y':
                 ax.add_patch(
-                    patches.Circle((0, 0), spot_bottom_r, ec='none', facecolor='red', alpha=0.1)
+                    patches.Circle((0, 0), spot_bottom_r, ec='none', facecolor='pink', alpha=0.1)
                 )
             else:
                 ax.add_patch(
-                    patches.Circle((0, 0), spot_r, ec='none', facecolor='red', alpha=0.1)
+                    patches.Circle((0, 0), spot_r, ec='none', facecolor='pink', alpha=0.1)
                 )
                 ax.axhline(spot_bottom_height, color='gray', linestyle='--', linewidth=0.8)
 

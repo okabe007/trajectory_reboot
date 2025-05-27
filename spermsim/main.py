@@ -1610,14 +1610,14 @@ class SpermPlot:
             spot_bottom_radius = constants['spot_bottom_r']
             spot_r = constants['spot_r']
             spot_bottom_height = constants['spot_bottom_height']
-            axes[0].add_patch(patches.Circle((0, 0), spot_bottom_radius, ec='none', facecolor='red', alpha=0.1))
+            axes[0].add_patch(patches.Circle((0, 0), spot_bottom_radius, ec='none', facecolor='pink', alpha=0.1))
             for ax in axes[1:]:
-                ax.add_patch(patches.Circle((0, 0), spot_r, ec='none', facecolor='red', alpha=0.1))
+                ax.add_patch(patches.Circle((0, 0), spot_r, ec='none', facecolor='pink', alpha=0.1))
                 ax.axhline(spot_bottom_height, color='gray', linestyle='--', linewidth=0.8)
         elif shape == 'drop':
             drop_r = constants['drop_r']
             for ax in axes:
-                ax.add_patch(patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1))
+                ax.add_patch(patches.Circle((0, 0), drop_r, ec='none', facecolor='pink', alpha=0.1))
         elif shape == 'cube':
             pass
 
@@ -1625,14 +1625,14 @@ class SpermPlot:
             spot_bottom_radius = constants['spot_bottom_r']
             spot_r = constants['spot_r']
             spot_bottom_height = constants['spot_bottom_height']
-            axes[0].add_patch(patches.Circle((0, 0), spot_bottom_radius, ec='none', facecolor='red', alpha=0.1))
+            axes[0].add_patch(patches.Circle((0, 0), spot_bottom_radius, ec='none', facecolor='pink', alpha=0.1))
             for ax in axes[1:]:
-                ax.add_patch(patches.Circle((0, 0), spot_r, ec='none', facecolor='red', alpha=0.1))
+                ax.add_patch(patches.Circle((0, 0), spot_r, ec='none', facecolor='pink', alpha=0.1))
                 ax.axhline(spot_bottom_height, color='gray', linestyle='--', linewidth=0.8)
         elif shape == 'drop':
             drop_r = constants['drop_r']
             for ax in axes:
-                ax.add_patch(patches.Circle((0, 0), drop_r, ec='none', facecolor='red', alpha=0.1))
+                ax.add_patch(patches.Circle((0, 0), drop_r, ec='none', facecolor='pink', alpha=0.1))
         elif shape == 'cube':
             pass
 class SpermTrajectoryVisualizer:
@@ -1761,7 +1761,11 @@ class SpermTrajectoryVisualizer:
                 ez,
                 color='yellow',
                 alpha=0.2,
+<<<<<<< ours
                 edgecolor='gray',
+=======
+                edgecolors='gray',
+>>>>>>> theirs
                 linewidth=0.5,
             )
             lines = [ax.plot([], [], [], lw=2)[0] for _ in range(num_sperm)]
