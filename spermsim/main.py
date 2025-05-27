@@ -1746,7 +1746,7 @@ class SpermTrajectoryVisualizer:
                 sx = spot_r * np.outer(np.sin(shape_v), np.cos(shape_u))
                 sy = spot_r * np.outer(np.sin(shape_v), np.sin(shape_u))
                 sz = spot_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
-                ax.plot_surface(sx, sy, sz, color='red', alpha=0.15)
+                ax.plot_surface(sx, sy, sz, color='pink', alpha=0.15)
             elif shape == "drop":
                 drop_r = self.constants['drop_r']
                 shape_u = np.linspace(0, 2*np.pi, 60)
@@ -1754,8 +1754,16 @@ class SpermTrajectoryVisualizer:
                 sx = drop_r * np.outer(np.sin(shape_v), np.cos(shape_u))
                 sy = drop_r * np.outer(np.sin(shape_v), np.sin(shape_u))
                 sz = drop_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
-                ax.plot_surface(sx, sy, sz, color='red', alpha=0.15)
-            ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.2)
+                ax.plot_surface(sx, sy, sz, color='pink', alpha=0.15)
+            ax.plot_surface(
+                ex,
+                ey,
+                ez,
+                color='yellow',
+                alpha=0.2,
+                edgecolor='gray',
+                linewidth=0.5,
+            )
             lines = [ax.plot([], [], [], lw=2)[0] for _ in range(num_sperm)]
             def init():
                 for line in lines:
