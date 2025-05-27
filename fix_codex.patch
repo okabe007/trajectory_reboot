@@ -1,60 +1,66 @@
 diff --git a/core/simulation.py b/core/simulation.py
-index 1abe548..4ba0923 100644
+index 4ba0923..2133aa7 100644
 --- a/core/simulation.py
 +++ b/core/simulation.py
-@@ -173,51 +173,54 @@ def _io_check_spot(
-         if xy_dist < bottom_r - limit:
-             if prev_stat in (SpotIO.SPOT_EDGE_OUT, SpotIO.POLYGON_MODE) or stick_status > 0:
-                 return SpotIO.POLYGON_MODE
-             return SpotIO.SPOT_BOTTOM
+@@ -430,50 +430,61 @@ class SpermSimulation:
+                             bottom_z = self.constants["spot_bottom_height"]
+                             step_vec = vec * step_len
+                             if abs(step_vec[2]) < 1e-12:
+                                 proj = step_vec.copy()
+                                 proj[2] = 0.0
+                                 norm = np.linalg.norm(proj)
+                                 if norm < 1e-12:
+                                     proj = np.array([1.0, 0.0, 0.0]) * step_len
+                                     norm = step_len
+                                 candidate = pos + proj / norm * step_len
+                                 vec = proj / norm
+                             else:
+                                 t = (bottom_z - pos[2]) / step_vec[2]
+                                 t = max(0.0, min(1.0, t))
+                                 intersect = pos + step_vec * t
+                                 remain = step_len * (1.0 - t)
+                                 proj_dir = vec.copy()
+                                 proj_dir[2] = 0.0
+                                 norm = np.linalg.norm(proj_dir)
+                                 if norm < 1e-12:
+                                     proj_dir = np.array([1.0, 0.0, 0.0])
+                                     norm = 1.0
+                                 proj_dir /= norm
+                                 candidate = intersect + proj_dir * remain
+                                 vec = (candidate - pos) / step_len
++
++                    disp_len = np.linalg.norm(candidate - pos)
++                    max_len = step_len
++                    if disp_len > max_len * 1.05:
++                        print(
++                            f"[ERROR] displacement {disp_len} mm exceeds "
++                            f"step_length {max_len} mm at rep={rep}, sperm={i}, step={j}"
++                        )
++                        print(f"pos={pos}, candidate={candidate}, vec={vec}")
++                        raise RuntimeError("step length exceeded")
++
+                     pos = candidate
+                     traj.append(pos.copy())
+                     if shape == "spot":
+                         prev_states[i] = status
+                         if bottom_modes[i]:
+                             if stick_statuses[i] > 0:
+                                 stick_statuses[i] -= 1
+                             if stick_statuses[i] == 0:
+                                 bottom_modes[i] = False
  
-     return SpotIO.INSIDE
+                     if rep == 0 and i == 0 and j == 0:
+                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
+ 
+                 self.trajectory.append(np.vstack(traj))
+ 
+         print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, "
+               f"step_len={step_len} mm")
  
  
- def _line_sphere_intersection(p0: np.ndarray, p1: np.ndarray, r: float) -> tuple[np.ndarray, float]:
-     """Return intersection point and remaining distance after hitting the sphere."""
-     d = p1 - p0
-     d_norm = np.linalg.norm(d)
-     if d_norm < 1e-12:
-         return p0.copy(), 0.0
-     d_unit = d / d_norm
-     f = p0
-     a = 1.0
-     b = 2.0 * float(f @ d_unit)
-     c = float(f @ f) - r * r
-     disc = b * b - 4 * a * c
-     if disc < 0:
-         return p0.copy(), 0.0
-     sqrt_disc = math.sqrt(disc)
-     t1 = (-b - sqrt_disc) / (2 * a)
-     t2 = (-b + sqrt_disc) / (2 * a)
--    t_candidates = [t for t in (t1, t2) if t >= 0]
-+    # Only intersections that lie on the segment between ``p0`` and ``p1``
-+    # are valid.  Without this check ``t`` may point to an intersection far
-+    # away from the current step which leads to an excessively long vector.
-+    t_candidates = [t for t in (t1, t2) if 0 <= t <= d_norm]
-     if not t_candidates:
-         return p0.copy(), 0.0
-     t = min(t_candidates)
-     intersection = p0 + d_unit * t
-     remaining = max(d_norm - t, 0.0)
-     return intersection, remaining
  
+     import matplotlib.pyplot as plt
  
- def _reflect(vec: np.ndarray, normal: np.ndarray) -> np.ndarray:
-     """Reflect ``vec`` on plane defined by ``normal``."""
-     return vec - 2.0 * np.dot(vec, normal) * normal
- 
- 
- def polygon_mode(
-     current_pos: np.ndarray,
-     polygon_idx: int,
-     spot_r: float,
-     stick_count: int,
-     deviation: float,
-     spot_angle_rad: float,
- ) -> np.ndarray:
-     """Return next vector when tracing the bottom edge polygon.
- 
-     When ``stick_count`` falls below 1, ``detach_edge_mode`` is invoked to
-     generate a vector that points inside the spherical cap.
+     def plot_trajectories(self, max_sperm=5, save_path=None):
+         """
+         インスタンスのself.trajectory（リスト of N×3 配列）を可視化

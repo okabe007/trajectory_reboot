@@ -452,6 +452,17 @@ class SpermSimulation:
                                 proj_dir /= norm
                                 candidate = intersect + proj_dir * remain
                                 vec = (candidate - pos) / step_len
+
+                    disp_len = np.linalg.norm(candidate - pos)
+                    max_len = step_len
+                    if disp_len > max_len * 1.05:
+                        print(
+                            f"[ERROR] displacement {disp_len} mm exceeds "
+                            f"step_length {max_len} mm at rep={rep}, sperm={i}, step={j}"
+                        )
+                        print(f"pos={pos}, candidate={candidate}, vec={vec}")
+                        raise RuntimeError("step length exceeded")
+
                     pos = candidate
                     traj.append(pos.copy())
                     if shape == "spot":
