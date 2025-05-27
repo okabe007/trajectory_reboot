@@ -1761,11 +1761,7 @@ class SpermTrajectoryVisualizer:
                 ez,
                 color='yellow',
                 alpha=0.2,
-<<<<<<< ours
-                edgecolor='gray',
-=======
                 edgecolors='gray',
->>>>>>> theirs
                 linewidth=0.5,
             )
             lines = [ax.plot([], [], [], lw=2)[0] for _ in range(num_sperm)]
