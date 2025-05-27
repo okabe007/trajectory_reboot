@@ -1737,25 +1737,37 @@ class SpermTrajectoryVisualizer:
                     np.ones(np.size(egg_u)), np.cos(egg_v)
                 )
             )
-            if shape == "spot":
-                spot_r = self.constants.get('spot_r', 5)
-                spot_angle_deg = self.constants.get('spot_angle', 60)
-                bottom_h = self.constants.get('spot_bottom_height', 0)
-                shape_u = np.linspace(0, 2*np.pi, 60)
-                theta_max_rad = np.deg2rad(spot_angle_deg)
-                shape_v = np.linspace(0, theta_max_rad, 60)
-                sx = spot_r * np.outer(np.sin(shape_v), np.cos(shape_u))
-                sy = spot_r * np.outer(np.sin(shape_v), np.sin(shape_u))
-                sz = bottom_h + spot_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
-                ax.plot_surface(sx, sy, sz, color='pink', alpha=0.15, edgecolor='none')
+            vox_res = 20
+            if shape == "cube":
+                x_min, x_max = self.constants["x_min"], self.constants["x_max"]
+                y_min, y_max = self.constants["y_min"], self.constants["y_max"]
+                z_min, z_max = self.constants["z_min"], self.constants["z_max"]
+                X, Y, Z = np.mgrid[
+                    x_min:x_max:complex(0, vox_res),
+                    y_min:y_max:complex(0, vox_res),
+                    z_min:z_max:complex(0, vox_res),
+                ]
+                mask = np.ones(X.shape, dtype=bool)
+                ax.voxels(X, Y, Z, mask, facecolors="pink", edgecolor="none", alpha=0.15)
+            elif shape == "spot":
+                spot_r = self.constants.get("spot_r", 5)
+                bottom_h = self.constants.get("spot_bottom_height", 0)
+                X, Y, Z = np.mgrid[
+                    -spot_r:spot_r:complex(0, vox_res),
+                    -spot_r:spot_r:complex(0, vox_res),
+                    bottom_h:spot_r:complex(0, vox_res),
+                ]
+                mask = (X**2 + Y**2 + Z**2 <= spot_r**2) & (Z >= bottom_h)
+                ax.voxels(X, Y, Z, mask, facecolors="pink", edgecolor="none", alpha=0.15)
             elif shape == "drop":
-                drop_r = self.constants['drop_r']
-                shape_u = np.linspace(0, 2*np.pi, 60)
-                shape_v = np.linspace(0, np.pi, 60)
-                sx = drop_r * np.outer(np.sin(shape_v), np.cos(shape_u))
-                sy = drop_r * np.outer(np.sin(shape_v), np.sin(shape_u))
-                sz = drop_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
-                ax.plot_surface(sx, sy, sz, color='pink', alpha=0.15, edgecolor='none')
+                drop_r = self.constants["drop_r"]
+                X, Y, Z = np.mgrid[
+                    -drop_r:drop_r:complex(0, vox_res),
+                    -drop_r:drop_r:complex(0, vox_res),
+                    0:drop_r:complex(0, vox_res),
+                ]
+                mask = (X**2 + Y**2 + Z**2 <= drop_r**2) & (Z >= 0)
+                ax.voxels(X, Y, Z, mask, facecolors="pink", edgecolor="none", alpha=0.15)
             ax.plot_surface(
                 ex,
                 ey,
