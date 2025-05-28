@@ -47,12 +47,47 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
 
     return constants
 
+def _egg_position(constants: dict) -> list[float]:
+    """
+    卵子の位置を shape と egg_localization に応じて返す。
+    cube, drop, spot 各形状で計算式が異なる。
+    """
+    mode = constants.get("egg_localization", "center")
+    shape = constants.get("shape", "cube").lower()
+    gamete_r = constants.get("gamete_r", 0.05)
+
+    if shape == "cube" or shape == "drop":
+        z_min = constants.get("z_min", -1.0)
+        z_max = constants.get("z_max", 1.0)
+        if mode == "center":
+            return [0.0, 0.0, 0.0]
+        elif mode == "bottom_center":
+            return [0.0, 0.0, z_min + gamete_r]
+        elif mode == "top_center":
+            return [0.0, 0.0, z_max - gamete_r]
+
+    elif shape == "spot":
+        spot_r = constants.get("spot_r", 1.0)
+        spot_bottom_height = constants.get("spot_bottom_height", 0.0)
+        if mode == "center":
+            return [0.0, 0.0, (spot_r + spot_bottom_height) / 2]
+        elif mode == "bottom_center":
+            return [0.0, 0.0, spot_bottom_height + gamete_r]
+        elif mode == "top_center":
+            return [0.0, 0.0, spot_r - gamete_r]
+
+    raise ValueError(f"Unknown shape '{shape}' or egg_localization mode '{mode}'")
+
 
 # ------------------------------------------------------------
 # plot_utils.py 用の軽量ヘルパー --------------------------------
 # ------------------------------------------------------------
-def get_limits(constants: Dict[str, float]) -> Tuple[float, float, float, float, float, float]:
-    """x/y/z 各軸の min・max（mm）を tuple で返す"""
-    return (constants["x_min"], constants["x_max"],
-            constants["y_min"], constants["y_max"],
-            constants["z_min"], constants["z_max"])
+def get_limits(constants: dict) -> tuple:
+    x_min = constants.get("x_min", -1.0)
+    x_max = constants.get("x_max", 1.0)
+    y_min = constants.get("y_min", -1.0)
+    y_max = constants.get("y_max", 1.0)
+    z_min = constants.get("z_min", -1.0)
+    z_max = constants.get("z_max", 1.0)
+
+    return x_min, x_max, y_min, y_max, z_min, z_max

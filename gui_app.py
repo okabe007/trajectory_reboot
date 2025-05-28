@@ -383,6 +383,10 @@ class SimApp(tk.Tk):
         sim = SpermSimulation(self.config_data)
         sim.run(self.config_data["sim_repeat"])
 
+        if "movie" in self.config_data["display_mode"]:
+            from spermsim.CoreMovie import render_3d_movie
+            render_3d_movie(sim.trajectories, sim.constants)
+
         # --- ⑤ 描画 -----------------------------------------------------
         if "2D" in modes:
             plot_2d_trajectories(np.array(sim.trajectory), self.config_data)

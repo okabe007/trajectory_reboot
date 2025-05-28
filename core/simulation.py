@@ -5,9 +5,14 @@ from matplotlib import patches
 from datetime import datetime
 import math
 import os
+from matplotlib.animation import FuncAnimation
+import numpy as np
+from tools.derived_constants import _egg_position
 from tools.plot_utils import plot_2d_trajectories
 from core.geometry import CubeShape, DropShape, SpotShape, CerosShape
 from tools.derived_constants import calculate_derived_constants
+from tools.plot_utils import plot_3d_movie_trajectories
+
 
 
 def _make_local_basis(forward: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -35,58 +40,6 @@ def _perturb_direction(prev: np.ndarray, deviation: float, rng: np.random.Genera
     new_dir /= np.linalg.norm(new_dir) + 1e-12
     return new_dir
 
-
-def _egg_position(constants):
-    """Return (egg_x, egg_y, egg_z) according to shape and localization."""
-    shape = constants.get("shape", "cube").lower()
-    loc = constants.get("egg_localization", "center")
-    r = constants["gamete_r"]
-
-    if shape == "cube":
-        positions = {
-            "center": (0, 0, 0),
-            "bottom_center": (0, 0, constants["z_min"] + r),
-            "bottom_side": (
-                constants["x_min"] / 2 + r,
-                constants["y_min"] / 2 + r,
-                constants["z_min"] + r,
-            ),
-            "bottom_corner": (
-                constants["x_min"] + r,
-                constants["y_min"] + r,
-                constants["z_min"] + r,
-            ),
-        }
-    elif shape == "drop":
-        drop_r = constants["drop_r"]
-        positions = {
-            "center": (0, 0, 0),
-            "bottom_center": (0, 0, -drop_r + r),
-        }
-    elif shape == "spot":
-        spot_r = constants.get("spot_r", 0)
-        spot_bottom_height = constants.get("spot_bottom_height", 0)
-        positions = {
-            "center": (0, 0, (spot_bottom_height + spot_r) / 2),
-            "bottom_center": (0, 0, spot_bottom_height + r),
-            "bottom_edge": (
-                math.sqrt(max((spot_r - r) ** 2 - (spot_bottom_height + r) ** 2, 0)),
-                0,
-                spot_bottom_height + r,
-            ),
-        }
-    elif shape == "ceros":
-        cx = (constants["x_min"] + constants["x_max"]) / 2
-        cy = (constants["y_min"] + constants["y_max"]) / 2
-        cz = (constants["z_min"] + constants["z_max"]) / 2
-        positions = {"center": (cx, cy, cz), "bottom_center": (cx, cy, cz), "bottom_edge": (cx, cy, cz)}
-    else:
-        raise RuntimeError(f"Unknown shape '{shape}'")
-
-    if loc not in positions:
-        raise RuntimeError(f"Invalid egg_localization '{loc}' for shape '{shape}'")
-
-    return positions[loc]
 
 
 def _io_check_drop(
@@ -526,7 +479,7 @@ class SpermSimulation:
                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
 
                 self.trajectory.append(np.vstack(traj))
-
+        self.trajectories = np.array(self.trajectory)
         print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, "
               f"step_len={step_len} mm")
 
@@ -757,3 +710,60 @@ class SpermSimulation:
         plt.close(fig)
         print(f"[INFO] 動画を保存しました: {save_path}")
         return save_path
+    
+
+def plot_3d_movie_trajectories(trajs: np.ndarray, constants: dict, save_path=None, show=True):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    # === 定義されているべき派生定数 ===
+    xlim = constants.get("xlim", [-1, 1])
+    ylim = constants.get("ylim", [-1, 1])
+    zlim = constants.get("zlim", [-1, 1])
+    radius = constants.get("radius", 1.0)
+    egg_r = constants.get("gamete_r", 0.05)
+    egg_pos = _egg_position(constants)
+
+    def set_ax_3D(ax):
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        ax.set_zlim(zlim)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        ax.set_title("3D Sperm Trajectories")
+
+    # def draw_medium(ax, radius):
+    #     u, v = np.mgrid[0:2*np.pi:40j, 0:np.pi:20j]
+    #     x = radius * np.cos(u) * np.sin(v)
+    #     y = radius * np.sin(u) * np.sin(v)
+    #     z = radius * np.cos(v)
+    #     ax.plot_surface(x, y, z, color='pink', alpha=0.1, edgecolor='none')
+
+    # def draw_egg(ax, pos, radius):
+    #     u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
+    #     x = radius * np.cos(u) * np.sin(v) + pos[0]
+    #     y = radius * np.sin(u) * np.sin(v) + pos[1]
+    #     z = radius * np.cos(v) + pos[2]
+    #     ax.plot_surface(x, y, z, color='red', alpha=0.3, edgecolor='none')
+
+    num_frames = trajs.shape[1]
+    num_sperm = trajs.shape[0]
+
+    def update(frame):
+        ax.cla()
+        set_ax_3D(ax)
+        draw_medium(ax, radius)
+        # draw_egg(ax, egg_pos, egg_r)
+        for s in range(num_sperm):
+            ax.plot(trajs[s, :frame+1, 0],
+                    trajs[s, :frame+1, 1],
+                    trajs[s, :frame+1, 2],
+                    lw=1)
+
+    ani = FuncAnimation(fig, update, frames=num_frames, interval=100)
+
+    if save_path:
+        ani.save(save_path, writer='ffmpeg')
+    if show:
+        plt.show()

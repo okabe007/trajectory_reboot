@@ -1,166 +1,232 @@
-import matplotlib.pyplot as plt
-import numpy as np
 import os
-from datetime import datetime
-from matplotlib import patches
-from tools.derived_constants import get_limits  # スマートなimport
 import math
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import patches
+from matplotlib.animation import FuncAnimation
+from datetime import datetime
+from mpl_toolkits.mplot3d import Axes3D
+from tools.derived_constants import get_limits
+from tools.derived_constants import _egg_position  # 必要ならtoolsに移動しておく
 
+# =======================
+# 🔧 共通ヘルパー関数
+# =======================
 def _make_save_path(prefix="trajectory", ext="png", dir="Figs_and_Movies"):
     os.makedirs(dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"{dir}/{prefix}_{timestamp}.{ext}"
+def draw_medium(ax, constants: dict):
+    shape = constants.get("shape", "cube").lower()
 
-def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel, equal=False):
+    if shape == "spot":
+        R = constants.get("spot_r", 1.0)
+        z_base = constants.get("spot_bottom_height", 0.0)
+
+        # 球冠: z ≥ z_base → cos(θ) ≤ z_base/R → θ ≥ acos(z_base/R)
+        cos_theta_min = z_base / R
+        theta_min = np.arccos(np.clip(cos_theta_min, -1.0, 1.0))
+        theta = np.linspace(0, theta_min, 30)
+        phi = np.linspace(0, 2 * np.pi, 30)
+        theta, phi = np.meshgrid(theta, phi)
+        x = R * np.sin(theta) * np.cos(phi)
+        y = R * np.sin(theta) * np.sin(phi)
+        z = R * np.cos(theta)
+        ax.plot_surface(x, y, z, color="pink", alpha=0.3, edgecolor="none")
+
+    elif shape == "drop":
+        R = constants.get("drop_r", 1.0)
+        u, v = np.mgrid[0:2*np.pi:40j, 0:np.pi:20j]  # ✅ 球体全体を描く
+        x = R * np.cos(u) * np.sin(v)
+        y = R * np.sin(u) * np.sin(v)
+        z = R * np.cos(v)
+        ax.plot_surface(x, y, z, color="pink", alpha=0.3, edgecolor="none")
+
+    elif shape == "cube":
+        x_min, x_max = constants["x_min"], constants["x_max"]
+        y_min, y_max = constants["y_min"], constants["y_max"]
+        z_min, z_max = constants["z_min"], constants["z_max"]
+        for s, e in zip(
+            [(x_min, y_min, z_min), (x_max, y_min, z_min), (x_max, y_max, z_min),
+             (x_min, y_max, z_min), (x_min, y_min, z_max), (x_max, y_min, z_max),
+             (x_max, y_max, z_max), (x_min, y_max, z_max)],
+            [(x_max, y_min, z_min), (x_max, y_max, z_min), (x_min, y_max, z_min),
+             (x_min, y_min, z_max), (x_max, y_min, z_max), (x_max, y_max, z_max),
+             (x_min, y_max, z_max), (x_min, y_min, z_max)]
+        ):
+            ax.plot([s[0], e[0]], [s[1], e[1]], [s[2], e[2]], color="gray", alpha=0.2)
+
+def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel):
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    if equal:
-        ax.set_aspect('equal', adjustable='box')
+    ax.set_aspect('equal', adjustable='box')  # ✅ 数値の増分 = 実長さに一致
 
-
-def _egg_position(constants):
-    """Return (egg_x, egg_y, egg_z) according to shape and localization."""
-    shape = str(constants.get("shape", "cube")).lower()
-    loc = constants.get("egg_localization", "center")
-    r = constants.get("gamete_r", 0)
-
-    if shape == "cube":
-        positions = {
-            "center": (0, 0, 0),
-            "bottom_center": (0, 0, constants.get("z_min", 0) + r),
-            "bottom_side": (
-                constants.get("x_min", 0) / 2 + r,
-                constants.get("y_min", 0) / 2 + r,
-                constants.get("z_min", 0) + r,
-            ),
-            "bottom_corner": (
-                constants.get("x_min", 0) + r,
-                constants.get("y_min", 0) + r,
-                constants.get("z_min", 0) + r,
-            ),
-        }
-    elif shape == "drop":
-        drop_r = constants.get("drop_r", 0)
-        positions = {
-            "center": (0, 0, 0),
-            "bottom_center": (0, 0, -drop_r + r),
-        }
-    elif shape == "spot":
-        spot_r = constants.get("spot_r", 0)
-        spot_bottom_height = constants.get("spot_bottom_height", 0)
-        positions = {
-            "center": (0, 0, (spot_bottom_height + spot_r) / 2),
-            "bottom_center": (0, 0, spot_bottom_height + r),
-            "bottom_edge": (
-                math.sqrt(max((spot_r - r) ** 2 - (spot_bottom_height + r) ** 2, 0)),
-                0,
-                spot_bottom_height + r,
-            ),
-        }
-    elif shape == "ceros":
-        cx = (constants.get("x_min", 0) + constants.get("x_max", 0)) / 2
-        cy = (constants.get("y_min", 0) + constants.get("y_max", 0)) / 2
-        cz = (constants.get("z_min", 0) + constants.get("z_max", 0)) / 2
-        positions = {"center": (cx, cy, cz), "bottom_center": (cx, cy, cz), "bottom_edge": (cx, cy, cz)}
-    else:
-        raise RuntimeError(f"Unknown shape '{shape}'")
-
-    if loc not in positions:
-        raise RuntimeError(f"Invalid egg_localization '{loc}' for shape '{shape}'")
-
-    return positions[loc]
+def draw_egg(ax, pos, radius):
+    u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
+    x = radius * np.cos(u) * np.sin(v) + pos[0]
+    y = radius * np.sin(u) * np.sin(v) + pos[1]
+    z = radius * np.cos(v) + pos[2]
+    ax.plot_surface(x, y, z, color='red', alpha=0.3, edgecolor='none')
+# =======================
+# 🟨 2D軌跡プロット
+# =======================
+from matplotlib.patches import Circle
 
 def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=None):
+    from tools.derived_constants import get_limits, _egg_position
+
     x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
+    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
 
-    fig, axs = plt.subplots(1, 3, figsize=(10, 4))
-
-    shape = str(constants.get('shape', '')).lower()
+    shape = constants.get('shape', 'cube').lower()
     drop_r = float(constants.get('drop_r', 0.0))
     spot_r = float(constants.get('spot_r', 0.0))
-    spot_bottom_height = float(constants.get('spot_bottom_height', 0.0))
-    spot_bottom_r = float(constants.get('spot_bottom_r', spot_r))
+    egg_r = float(constants.get("gamete_r", 0.05))
+    egg_pos = _egg_position(constants)
 
-    if shape == 'spot' and spot_r > 0:
-        axis_configs = [
-            (axs[0], (-spot_bottom_r, spot_bottom_r), (-spot_bottom_r, spot_bottom_r),
-             "X", "Y", "XY-projection"),
-            (axs[1], (-spot_bottom_r, spot_bottom_r), (spot_bottom_height, spot_r),
-             "X", "Z", "XZ-projection"),
-            (axs[2], (-spot_bottom_r, spot_bottom_r), (spot_bottom_height, spot_r),
-             "Y", "Z", "YZ-projection"),
-        ]
-    else:
-        axis_configs = [
-            (axs[0], (x_min, x_max), (y_min, y_max), "X", "Y", "XY-projection"),
-            (axs[1], (x_min, x_max), (z_min, z_max), "X", "Z", "XZ-projection"),
-            (axs[2], (y_min, y_max), (z_min, z_max), "Y", "Z", "YZ-projection"),
-        ]
+    if max_sperm is None:
+        max_sperm = trajs.shape[0]
 
-    for ax, xlim, ylim, xlabel, ylabel, title in axis_configs:
-        equal = shape in ('drop', 'cube', 'spot')
-        _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel, equal)
-        ax.set_title(title)
-        if shape == 'drop' and drop_r > 0:
-            ax.add_patch(
-                patches.Circle((0, 0), drop_r, ec='none', facecolor='pink', alpha=0.1)
-            )
-        elif shape == 'cube':
-            width = xlim[1] - xlim[0]
-            height = ylim[1] - ylim[0]
-            ax.add_patch(
-                patches.Rectangle(
-                    (xlim[0], ylim[0]),
-                    width,
-                    height,
-                    ec='none',
-                    facecolor='pink',
-                    alpha=0.1,
-                )
-            )
-        elif shape == 'spot' and spot_r > 0:
-            if xlabel == 'X' and ylabel == 'Y':
-                ax.add_patch(
-                    patches.Circle((0, 0), spot_bottom_r, ec='none', facecolor='pink', alpha=0.1)
-                )
-            else:
-                ax.add_patch(
-                    patches.Circle((0, 0), spot_r, ec='none', facecolor='pink', alpha=0.1)
-                )
-                ax.axhline(spot_bottom_height, color='gray', linestyle='--', linewidth=0.8)
+    # 軌跡描画
+    for s in range(min(max_sperm, trajs.shape[0])):
+        axs[0].plot(trajs[s, :, 0], trajs[s, :, 1])  # XY
+        axs[1].plot(trajs[s, :, 0], trajs[s, :, 2])  # XZ
+        axs[2].plot(trajs[s, :, 1], trajs[s, :, 2])  # YZ
 
-    if shape != 'ceros':
-        egg_x, egg_y, egg_z = _egg_position(constants)
-        for ax, (x, y) in zip(axs, [(egg_x, egg_y), (egg_x, egg_z), (egg_y, egg_z)]):
-            ax.add_patch(
-                patches.Circle(
-                    (x, y),
-                    radius=constants.get('gamete_r', 0),
-                    facecolor='yellow',
-                    alpha=0.8,
-                    ec='gray',
-                    linewidth=1.0,
-                )
-            )
+    # 背景（メディウム）描画
+    if shape == "drop":
+        medium_r = drop_r
+        center = (0.0, 0.0)
+        axs[0].add_patch(Circle(center, medium_r, color="pink", alpha=0.3))  # XY
+        axs[1].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XZ
+        axs[2].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # YZ
 
-    n_sperm = min(trajs.shape[0], max_sperm or trajs.shape[0])
-    for s in range(n_sperm):
-        axs[0].plot(trajs[s, :, 0], trajs[s, :, 1])
-        axs[1].plot(trajs[s, :, 0], trajs[s, :, 2])
-        axs[2].plot(trajs[s, :, 1], trajs[s, :, 2])
+    elif shape == "spot":
+        medium_r = spot_r
+        center_z = constants.get("spot_bottom_height", 0.0) + egg_r
+        axs[0].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XY
+        axs[1].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # XZ
+        axs[2].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # YZ
 
-    fig.suptitle(
-        f"shape={constants.get('shape')}, vol={constants.get('volume')}, "
-        f"sperm_conc={constants.get('sperm_conc')}, vsl={constants.get('vsl')}, "
-        f"sim_min={constants.get('sim_min')}, sim_repeat={constants.get('sim_repeat')}",
-        fontsize=10
-    )
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-    if not save_path:
-        save_path = _make_save_path("trajectory_2d", "png")
-    plt.savefig(save_path, dpi=150)
-    print(f"[INFO] 2D図を保存しました: {save_path}")
+    # 卵子描画（円）
+    axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, color="yellow", alpha=0.6))  # XY
+    axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, color="yellow", alpha=0.6))  # XZ
+    axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, color="yellow", alpha=0.6))  # YZ
+
+    # 軸とアスペクト比
+    axs[0].set_title("XY")
+    axs[1].set_title("XZ")
+    axs[2].set_title("YZ")
+
+    _set_common_2d_ax(axs[0], (x_min, x_max), (y_min, y_max), "X", "Y")
+    _set_common_2d_ax(axs[1], (x_min, x_max), (z_min, z_max), "X", "Z")
+    _set_common_2d_ax(axs[2], (y_min, y_max), (z_min, z_max), "Y", "Z")
+
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path)
+    if show:
+        plt.show()
+
+
+# =======================
+# 🟨 3D用の補助描画関数
+# =======================
+def draw_egg_3d(ax: plt.Axes, constants: dict) -> None:
+    egg_x, egg_y, egg_z = _egg_position(constants)
+    r = constants.get("gamete_r", 0.15)
+    u = np.linspace(0, 2 * np.pi, 30)
+    v = np.linspace(0, np.pi, 30)
+    x = egg_x + r * np.outer(np.cos(u), np.sin(v))
+    y = egg_y + r * np.outer(np.sin(u), np.sin(v))
+    z = egg_z + r * np.outer(np.ones_like(u), np.cos(v))
+    ax.plot_surface(x, y, z, color='yellow', alpha=0.6, edgecolor='none')
+
+
+def draw_motion_area_3d(ax: plt.Axes, constants: dict) -> None:
+    shape = constants.get("shape", "cube").lower()
+
+    if shape == "spot":
+        R = constants.get("spot_R", 1.0)
+        angle_deg = constants.get("spot_angle", 60.0)
+        theta = np.linspace(0, np.deg2rad(angle_deg), 30)
+        phi = np.linspace(0, 2 * np.pi, 30)
+        theta, phi = np.meshgrid(theta, phi)
+        x = R * np.sin(theta) * np.cos(phi)
+        y = R * np.sin(theta) * np.sin(phi)
+        z = R * np.cos(theta)
+        ax.plot_surface(x, y, z, color="red", alpha=0.3, edgecolor="none")
+
+    elif shape == "drop":
+        R = constants.get("drop_r", 1.0)
+        u = np.linspace(0, 2 * np.pi, 30)
+        v = np.linspace(0, np.pi / 2, 30)
+        x = R * np.outer(np.cos(u), np.sin(v))
+        y = R * np.outer(np.sin(u), np.sin(v))
+        z = R * np.outer(np.ones_like(u), np.cos(v))
+        ax.plot_surface(x, y, z, color="blue", alpha=0.3, edgecolor="none")
+
+    elif shape == "cube":
+        x_min, x_max = constants["x_min"], constants["x_max"]
+        y_min, y_max = constants["y_min"], constants["y_max"]
+        z_min, z_max = constants["z_min"], constants["z_max"]
+        for s, e in zip(
+            [(x_min, y_min, z_min), (x_max, y_min, z_min), (x_max, y_max, z_min),
+             (x_min, y_max, z_min), (x_min, y_min, z_max), (x_max, y_min, z_max),
+             (x_max, y_max, z_max), (x_min, y_max, z_max)],
+            [(x_max, y_min, z_min), (x_max, y_max, z_min), (x_min, y_max, z_min),
+             (x_min, y_min, z_max), (x_max, y_min, z_max), (x_max, y_max, z_max),
+             (x_min, y_max, z_max), (x_min, y_min, z_max)]
+        ):
+            ax.plot([s[0], e[0]], [s[1], e[1]], [s[2], e[2]], color="gray", alpha=0.2)
+
+
+# =======================
+# 🟨 3Dムービー描画
+# =======================
+from tools.derived_constants import _egg_position
+
+def plot_3d_movie_trajectories(trajs: np.ndarray, constants: dict, save_path=None, show=True):
+    """3D軌跡ムービーの作成（卵子とメディウムも毎フレーム描画）"""
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    from matplotlib.animation import FuncAnimation
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    xlim, ylim, zlim = constants["xlim"], constants["ylim"], constants["zlim"]
+
+    def set_ax_3D(ax):
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        ax.set_zlim(zlim)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        ax.set_title("3D Sperm Trajectories")
+        ax.set_box_aspect([1, 1, 1])  # ← ★ これが超重要（軸スケールを固定）
+
+    
+
+    def update(frame):
+        ax.cla()  # ← これがある限り、再描画が必須！
+        set_ax_3D(ax)
+        draw_medium(ax, medium_radius)
+        draw_egg(ax, egg_pos, egg_radius)
+        for s in range(num_sperm):
+            ax.plot(trajs[s, :frame+1, 0],
+                    trajs[s, :frame+1, 1],
+                    trajs[s, :frame+1, 2],
+                    lw=1)
+
+    draw_egg(ax, pos, radius)
+    
+    ani = FuncAnimation(fig, update, frames=num_frames, interval=100)
+
+    if save_path:
+        ani.save(save_path, writer='ffmpeg')
     if show:
         plt.show()
