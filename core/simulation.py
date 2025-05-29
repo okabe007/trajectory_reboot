@@ -456,23 +456,15 @@ class SpermSimulation:
 
                     elif shape == "spot":
                         prev = prev_states[i]
-                        status = IO_check_spot(pos, candidate, self.constants, prev)
+                        candidate, status, bottom_hit = _io_check_spot(
+                            pos, candidate, self.constants, prev, stick_statuses[i]
+                        )
                         prev_states[i] = status
 
-                        if status == "sphere_out":
-                            normal = candidate / (np.linalg.norm(candidate) + 1e-12)
-                            vec = vec - 2 * np.dot(vec, normal) * normal
-                            vec /= np.linalg.norm(vec) + 1e-12
-                            candidate = pos + vec * step_len
-
-                        elif status == "spot_edge_out":
-                            normal = np.array([candidate[0], candidate[1], 0.0])
-                            normal /= np.linalg.norm(normal) + 1e-12
-                            vec = vec - 2 * np.dot(vec, normal) * normal
-                            vec /= np.linalg.norm(vec) + 1e-12
-                            candidate = pos + vec * step_len
-
-                        elif status in ["bottom_out", "spot_bottom", "polygon_mode"]:
+                        if bottom_hit or status in [
+                            SpotIO.SPOT_BOTTOM,
+                            SpotIO.POLYGON_MODE,
+                        ]:
                             bottom_modes[i] = True
                             if stick_statuses[i] == 0:
                                 stick_statuses[i] = int(

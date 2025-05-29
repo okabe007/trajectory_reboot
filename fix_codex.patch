@@ -1,62 +1,79 @@
-diff --git a/tools/plot_utils.py b/tools/plot_utils.py
-index 8192b827d73a2c76c77f7ef750ac338faacd84cd..6f4dc72a1feccf2a3f352870eb0a1ec1d286ca56 100644
---- a/tools/plot_utils.py
-+++ b/tools/plot_utils.py
-@@ -89,53 +89,54 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
-     if max_sperm is None:
-         max_sperm = trajs.shape[0]
+diff --git a/core/simulation.py b/core/simulation.py
+index 065c7ccb08b1c3fc6132ebd14b2ec7edc071110f..1f8f342d1d416717c48436d32054f8c5696264c6 100644
+--- a/core/simulation.py
++++ b/core/simulation.py
+@@ -434,67 +434,59 @@ class SpermSimulation:
+                     if shape == "spot" and bottom_modes[i] and stick_statuses[i] > 0:
+                         vec[2] = 0.0
+                         vec /= np.linalg.norm(vec) + 1e-12
  
-     # 軌跡描画
-     for s in range(min(max_sperm, trajs.shape[0])):
-         axs[0].plot(trajs[s, :, 0], trajs[s, :, 1])  # XY
-         axs[1].plot(trajs[s, :, 0], trajs[s, :, 2])  # XZ
-         axs[2].plot(trajs[s, :, 1], trajs[s, :, 2])  # YZ
+                     candidate = pos + vec * step_len
  
-     # 背景（メディウム）描画
-     if shape == "drop":
-         medium_r = drop_r
-         center = (0.0, 0.0)
-         axs[0].add_patch(Circle(center, medium_r, color="pink", alpha=0.3))  # XY
-         axs[1].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XZ
-         axs[2].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # YZ
+                     if shape == "drop":
+                         base_pos = pos
+                         move_len = step_len
+                         status = _io_check_drop(candidate, self.constants, base_pos)
+                         if status == "outside":
+                             vec, base_pos, stick_statuses[i] = _handle_drop_outside(
+                                 vec,
+                                 base_pos,
+                                 self.constants,
+                                 surface_time,
+                                 sample_rate_hz,
+                                 stick_statuses[i]
+                             )
+                             if stick_statuses[i] > 0:
+                                 surface_modes[i] = True
+                             candidate = base_pos + vec * move_len
  
-     elif shape == "spot":
-         medium_r = spot_r
-         center_z = constants.get("spot_bottom_height", 0.0) + egg_r
-         axs[0].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XY
-         axs[1].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # XZ
-         axs[2].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # YZ
+                     elif shape == "spot":
+                         prev = prev_states[i]
+-                        status = IO_check_spot(pos, candidate, self.constants, prev)
++                        candidate, status, bottom_hit = _io_check_spot(
++                            pos, candidate, self.constants, prev, stick_statuses[i]
++                        )
+                         prev_states[i] = status
  
-     # 卵子描画（円）
--    axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, color="yellow", alpha=0.6))  # XY
--    axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, color="yellow", alpha=0.6))  # XZ
--    axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, color="yellow", alpha=0.6))  # YZ
-+    egg_kw = dict(color="yellow", alpha=0.6, edgecolor="lightgray", linewidth=0.5)
-+    axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, **egg_kw))  # XY
-+    axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, **egg_kw))  # XZ
-+    axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, **egg_kw))  # YZ
+-                        if status == "sphere_out":
+-                            normal = candidate / (np.linalg.norm(candidate) + 1e-12)
+-                            vec = vec - 2 * np.dot(vec, normal) * normal
+-                            vec /= np.linalg.norm(vec) + 1e-12
+-                            candidate = pos + vec * step_len
+-
+-                        elif status == "spot_edge_out":
+-                            normal = np.array([candidate[0], candidate[1], 0.0])
+-                            normal /= np.linalg.norm(normal) + 1e-12
+-                            vec = vec - 2 * np.dot(vec, normal) * normal
+-                            vec /= np.linalg.norm(vec) + 1e-12
+-                            candidate = pos + vec * step_len
+-
+-                        elif status in ["bottom_out", "spot_bottom", "polygon_mode"]:
++                        if bottom_hit or status in [
++                            SpotIO.SPOT_BOTTOM,
++                            SpotIO.POLYGON_MODE,
++                        ]:
+                             bottom_modes[i] = True
+                             if stick_statuses[i] == 0:
+                                 stick_statuses[i] = int(
+                                     self.constants["surface_time"] /
+                                     self.constants["sample_rate_hz"]
+                                 )
  
-     # 軸とアスペクト比
-     axs[0].set_title("XY")
-     axs[1].set_title("XZ")
-     axs[2].set_title("YZ")
+                         vec = (candidate - pos) / step_len
  
-     _set_common_2d_ax(axs[0], (x_min, x_max), (y_min, y_max), "X", "Y")
-     _set_common_2d_ax(axs[1], (x_min, x_max), (z_min, z_max), "X", "Z")
-     _set_common_2d_ax(axs[2], (y_min, y_max), (z_min, z_max), "Y", "Z")
+                     disp_len = np.linalg.norm(candidate - pos)
+                     max_len = step_len
+                     if disp_len > max_len * 1.05:
+                         print(
+                             f"[ERROR] displacement {disp_len} mm exceeds "
+                             f"step_length {max_len} mm at rep={rep}, sperm={i}, step={j}"
+                         )
+                         print(f"pos={pos}, candidate={candidate}, vec={vec}")
+                         raise RuntimeError("step length exceeded")
  
-     fig.tight_layout()
-     if save_path:
-         fig.savefig(save_path)
-     if show:
-         plt.show()
+                     pos = candidate
+                     traj.append(pos.copy())
  
- 
- # =======================
- # 🟨 3D用の補助描画関数
- # =======================
- def draw_egg_3d(ax: plt.Axes, constants: dict) -> None:
-     egg_x, egg_y, egg_z = _egg_position(constants)
-     r = constants.get("gamete_r", 0.15)
-     u = np.linspace(0, 2 * np.pi, 30)
-     v = np.linspace(0, np.pi, 30)
+                     if shape == "spot":
+                         if bottom_modes[i]:
+                             if stick_statuses[i] > 0:
