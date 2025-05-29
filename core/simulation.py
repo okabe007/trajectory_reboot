@@ -372,6 +372,7 @@ class SpermSimulation:
         prev_states = [SpotIO.INSIDE for _ in range(number_of_sperm)]
         bottom_modes = [False for _ in range(number_of_sperm)]
         stick_statuses = [0 for _ in range(number_of_sperm)]
+        surface_modes = [False for _ in range(number_of_sperm)]
 
         # ---- ループ ---------------------------------------------------
         for rep in range(int(sim_repeat)):
@@ -387,6 +388,10 @@ class SpermSimulation:
                 for j in range(number_of_steps):
                     if j > 0:
                         vec = _perturb_direction(vec, self.constants["deviation"], rng)
+                    if shape == "drop" and surface_modes[i] and stick_statuses[i] > 0:
+                        normal = pos / (np.linalg.norm(pos) + 1e-12)
+                        vec = vec - np.dot(vec, normal) * normal
+                        vec /= np.linalg.norm(vec) + 1e-12
                     if shape == "spot" and bottom_modes[i] and stick_statuses[i] > 0:
                         vec[2] = 0.0
                         vec /= np.linalg.norm(vec) + 1e-12
@@ -404,6 +409,8 @@ class SpermSimulation:
                                 sample_rate_hz,
                                 stick_statuses[i]
                             )
+                            if stick_statuses[i] > 0:
+                                surface_modes[i] = True
                             candidate = base_pos + vec * move_len
                         
                         
@@ -440,6 +447,11 @@ class SpermSimulation:
                                 stick_statuses[i] -= 1
                             if stick_statuses[i] == 0:
                                 bottom_modes[i] = False
+                    if shape == "drop" and surface_modes[i]:
+                        if stick_statuses[i] > 0:
+                            stick_statuses[i] -= 1
+                        if stick_statuses[i] == 0:
+                            surface_modes[i] = False
 
                     if rep == 0 and i == 0 and j == 0:
                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
