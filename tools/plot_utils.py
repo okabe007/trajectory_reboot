@@ -111,7 +111,7 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
         axs[2].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # YZ
 
     # 卵子描画（円）
-    egg_kw = dict(color="yellow", alpha=0.6, edgecolor="lightgray", linewidth=0.5)
+    egg_kw = dict(color="yellow", alpha=0.6, edgecolor="gray", linewidth=0.5)
     axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, **egg_kw))  # XY
     axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, **egg_kw))  # XZ
     axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, **egg_kw))  # YZ

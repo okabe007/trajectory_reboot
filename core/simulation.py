@@ -14,8 +14,52 @@ from tools.derived_constants import calculate_derived_constants
 from tools.plot_utils import plot_3d_movie_trajectories
 from core.geometry import _handle_drop_outside
 from core.geometry import _io_check_drop
+from numpy import linalg as LA
 
+def IO_check_spot(base_position: np.ndarray, temp_position: np.ndarray, constants: dict, IO_status: str) -> str:
+    radius   = constants['radius']
+    bottom_z = constants['spot_bottom_height']
+    bottom_R = constants['spot_bottom_r']  # ← 小文字に注意
+    limit    = constants['limit']
 
+    z_tip = temp_position[2]
+    r_tip = LA.norm(temp_position)
+    xy_dist = np.sqrt(temp_position[0]**2 + temp_position[1]**2)
+
+    if z_tip > bottom_z + limit:
+        if r_tip > radius + limit:
+            return "sphere_out"
+        else:
+            return "inside"
+
+    elif z_tip < bottom_z - limit:
+        denom = (temp_position[2] - base_position[2])
+        if denom == 0:
+            return "sphere_out"
+        t = (bottom_z - base_position[2]) / denom
+        if t < 0 or t > 1:
+            return "sphere_out"
+
+        intersect_xy = base_position[:2] + t * (temp_position[:2] - base_position[:2])
+        dist_xy = np.sqrt(intersect_xy[0]**2 + intersect_xy[1]**2)
+
+        if dist_xy < bottom_R + limit:
+            return "bottom_out"
+        else:
+            return "sphere_out"
+
+    elif bottom_z - limit < z_tip < bottom_z + limit:
+        if xy_dist > bottom_R + limit:
+            return "spot_edge_out"
+        elif abs(xy_dist - bottom_R) <= limit:
+            return "border"
+        elif xy_dist < bottom_R - limit:
+            if IO_status in ["spot_edge_out", "polygon_mode"]:
+                return "polygon_mode"
+            else:
+                return "spot_bottom"
+
+    return "inside"
 
 
 def _make_local_basis(forward: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -336,10 +380,8 @@ class SpermSimulation:
         self.trajectory に各精子の N×3 軌跡配列を格納する。
         座標・距離の単位は **mm** で統一。
         """
-        # ---- デバッグ：派生値確認 -------------------------------------
         print("[DEBUG] SpermSimulation パラメータ:", self.constants)
 
-        # ---- 形状オブジェクト生成 -------------------------------------
         shape = self.constants.get("shape", "cube")
         if shape == "cube":
             shape_obj = CubeShape(self.constants)
@@ -352,15 +394,14 @@ class SpermSimulation:
         else:
             raise ValueError(f"Unsupported shape: {shape}")
 
-        # ---- シミュレーション設定 -------------------------------------
-        number_of_sperm  = int(self.constants.get("number_of_sperm", 10))
-        number_of_steps  = int(self.constants.get("number_of_steps", 10))
-        step_len         = self.constants["step_length"]     # ← mm / step
-        seed_val         = self.constants.get("seed_number")
+        number_of_sperm = int(self.constants.get("number_of_sperm", 10))
+        number_of_steps = int(self.constants.get("number_of_steps", 10))
+        step_len = self.constants["step_length"]
+        seed_val = self.constants.get("seed_number")
+
         if seed_val is not None and str(seed_val).lower() != "none":
             try:
                 seed_int = int(seed_val)
-                # --- 全ての乱数生成を同じシードで制御するため ---
                 np.random.seed(seed_int)
                 rng = np.random.default_rng(seed_int)
             except Exception:
@@ -368,34 +409,34 @@ class SpermSimulation:
         else:
             rng = np.random.default_rng()
 
-        self.trajectory = []   # ← 毎 run() でリセット
-        prev_states = [SpotIO.INSIDE for _ in range(number_of_sperm)]
+        self.trajectory = []
+        prev_states = ["inside" for _ in range(number_of_sperm)]
         bottom_modes = [False for _ in range(number_of_sperm)]
         stick_statuses = [0 for _ in range(number_of_sperm)]
         surface_modes = [False for _ in range(number_of_sperm)]
 
-        # ---- ループ ---------------------------------------------------
         for rep in range(int(sim_repeat)):
             for i in range(number_of_sperm):
-
-                pos = shape_obj.initial_position()     # mm
+                pos = shape_obj.initial_position()
                 traj = [pos.copy()]
-                
-                # 初期方向
                 vec = rng.normal(size=3)
                 vec /= np.linalg.norm(vec) + 1e-12
 
                 for j in range(number_of_steps):
                     if j > 0:
                         vec = _perturb_direction(vec, self.constants["deviation"], rng)
+
                     if shape == "drop" and surface_modes[i] and stick_statuses[i] > 0:
                         normal = pos / (np.linalg.norm(pos) + 1e-12)
                         vec = vec - np.dot(vec, normal) * normal
                         vec /= np.linalg.norm(vec) + 1e-12
+
                     if shape == "spot" and bottom_modes[i] and stick_statuses[i] > 0:
                         vec[2] = 0.0
                         vec /= np.linalg.norm(vec) + 1e-12
+
                     candidate = pos + vec * step_len
+
                     if shape == "drop":
                         base_pos = pos
                         move_len = step_len
@@ -412,21 +453,34 @@ class SpermSimulation:
                             if stick_statuses[i] > 0:
                                 surface_modes[i] = True
                             candidate = base_pos + vec * move_len
-                        
-                        
+
                     elif shape == "spot":
                         prev = prev_states[i]
-                        candidate, status, bottom_hit = _io_check_spot(
-                            pos, candidate, self.constants, prev, stick_statuses[i]
-                        )
-                        vec = (candidate - pos) / step_len
-                        if bottom_hit:
+                        status = IO_check_spot(pos, candidate, self.constants, prev)
+                        prev_states[i] = status
+
+                        if status == "sphere_out":
+                            normal = candidate / (np.linalg.norm(candidate) + 1e-12)
+                            vec = vec - 2 * np.dot(vec, normal) * normal
+                            vec /= np.linalg.norm(vec) + 1e-12
+                            candidate = pos + vec * step_len
+
+                        elif status == "spot_edge_out":
+                            normal = np.array([candidate[0], candidate[1], 0.0])
+                            normal /= np.linalg.norm(normal) + 1e-12
+                            vec = vec - 2 * np.dot(vec, normal) * normal
+                            vec /= np.linalg.norm(vec) + 1e-12
+                            candidate = pos + vec * step_len
+
+                        elif status in ["bottom_out", "spot_bottom", "polygon_mode"]:
                             bottom_modes[i] = True
                             if stick_statuses[i] == 0:
                                 stick_statuses[i] = int(
-                                    self.constants["surface_time"]
-                                    / self.constants["sample_rate_hz"]
+                                    self.constants["surface_time"] /
+                                    self.constants["sample_rate_hz"]
                                 )
+
+                        vec = (candidate - pos) / step_len
 
                     disp_len = np.linalg.norm(candidate - pos)
                     max_len = step_len
@@ -440,13 +494,14 @@ class SpermSimulation:
 
                     pos = candidate
                     traj.append(pos.copy())
+
                     if shape == "spot":
-                        prev_states[i] = status
                         if bottom_modes[i]:
                             if stick_statuses[i] > 0:
                                 stick_statuses[i] -= 1
                             if stick_statuses[i] == 0:
                                 bottom_modes[i] = False
+
                     if shape == "drop" and surface_modes[i]:
                         if stick_statuses[i] > 0:
                             stick_statuses[i] -= 1
@@ -454,13 +509,13 @@ class SpermSimulation:
                             surface_modes[i] = False
 
                     if rep == 0 and i == 0 and j == 0:
-                        print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
+                        print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec * step_len):.5f}")
 
                 self.trajectory.append(np.vstack(traj))
+
         self.trajectories = np.array(self.trajectory)
         print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, "
-              f"step_len={step_len} mm")
-
+            f"step_len={step_len} mm")
 
 
     import matplotlib.pyplot as plt
