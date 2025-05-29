@@ -1,104 +1,56 @@
-diff --git a/spermsim/main.py b/spermsim/main.py
-index 10f62e4..5f98057 100644
---- a/spermsim/main.py
-+++ b/spermsim/main.py
-@@ -1715,69 +1715,81 @@ class SpermTrajectoryVisualizer:
-                 f"sampling: {self.constants['sample_rate_hz']} Hz,\n"
-                 f"dev: {self.constants['deviation']}, "
-                 f"stick: {self.constants['stick_sec']} sec,\n"
-                 f"sperm/egg interaction: {contacts_count} during {self.constants['sim_min']} min, "
-                 f"egg: {self.constants['egg_localization']}, "
-             )
-             if shape == "spot":
-                 title_str_3d += f"spot_angle: {self.constants.get('spot_angle', 'N/A')} degree"
-             fig.suptitle(title_str_3d, fontsize=8, y=0.93)
-             egg_u = np.linspace(0, 2 * np.pi, 50)
-             egg_v = np.linspace(0, np.pi, 50)
-             ex = (
-                 self.egg_center[0]
-                 + self.egg_radius * np.outer(np.cos(egg_u), np.sin(egg_v))
-             )
-             ey = (
-                 self.egg_center[1]
-                 + self.egg_radius * np.outer(np.sin(egg_u), np.sin(egg_v))
-             )
-             ez = (
-                 self.egg_center[2]
-                 + self.egg_radius * np.outer(
-                     np.ones(np.size(egg_u)), np.cos(egg_v)
-                 )
-             )
--            if shape == "spot":
--                spot_r = self.constants.get('spot_r', 5)
--                spot_angle_deg = self.constants.get('spot_angle', 60)
--                bottom_h = self.constants.get('spot_bottom_height', 0)
--                shape_u = np.linspace(0, 2*np.pi, 60)
--                theta_max_rad = np.deg2rad(spot_angle_deg)
--                shape_v = np.linspace(0, theta_max_rad, 60)
--                sx = spot_r * np.outer(np.sin(shape_v), np.cos(shape_u))
--                sy = spot_r * np.outer(np.sin(shape_v), np.sin(shape_u))
--                sz = bottom_h + spot_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
--                ax.plot_surface(sx, sy, sz, color='pink', alpha=0.15, edgecolor='none')
-+            vox_res = 20
-+            if shape == "cube":
-+                x_min, x_max = self.constants["x_min"], self.constants["x_max"]
-+                y_min, y_max = self.constants["y_min"], self.constants["y_max"]
-+                z_min, z_max = self.constants["z_min"], self.constants["z_max"]
-+                X, Y, Z = np.mgrid[
-+                    x_min:x_max:complex(0, vox_res),
-+                    y_min:y_max:complex(0, vox_res),
-+                    z_min:z_max:complex(0, vox_res),
-+                ]
-+                mask = np.ones(X.shape, dtype=bool)
-+                ax.voxels(X, Y, Z, mask, facecolors="pink", edgecolor="none", alpha=0.15)
-+            elif shape == "spot":
-+                spot_r = self.constants.get("spot_r", 5)
-+                bottom_h = self.constants.get("spot_bottom_height", 0)
-+                X, Y, Z = np.mgrid[
-+                    -spot_r:spot_r:complex(0, vox_res),
-+                    -spot_r:spot_r:complex(0, vox_res),
-+                    bottom_h:spot_r:complex(0, vox_res),
-+                ]
-+                mask = (X**2 + Y**2 + Z**2 <= spot_r**2) & (Z >= bottom_h)
-+                ax.voxels(X, Y, Z, mask, facecolors="pink", edgecolor="none", alpha=0.15)
-             elif shape == "drop":
--                drop_r = self.constants['drop_r']
--                shape_u = np.linspace(0, 2*np.pi, 60)
--                shape_v = np.linspace(0, np.pi, 60)
--                sx = drop_r * np.outer(np.sin(shape_v), np.cos(shape_u))
--                sy = drop_r * np.outer(np.sin(shape_v), np.sin(shape_u))
--                sz = drop_r * np.outer(np.cos(shape_v), np.ones(np.size(shape_u)))
--                ax.plot_surface(sx, sy, sz, color='pink', alpha=0.15, edgecolor='none')
-+                drop_r = self.constants["drop_r"]
-+                X, Y, Z = np.mgrid[
-+                    -drop_r:drop_r:complex(0, vox_res),
-+                    -drop_r:drop_r:complex(0, vox_res),
-+                    0:drop_r:complex(0, vox_res),
-+                ]
-+                mask = (X**2 + Y**2 + Z**2 <= drop_r**2) & (Z >= 0)
-+                ax.voxels(X, Y, Z, mask, facecolors="pink", edgecolor="none", alpha=0.15)
-             ax.plot_surface(
-                 ex,
-                 ey,
-                 ez,
-                 color='yellow',
-                 alpha=0.2,
-                 edgecolor='gray',
-                 linewidth=0.5,
-             )
-             lines = [ax.plot([], [], [], lw=2)[0] for _ in range(num_sperm)]
-             def init():
-                 for line in lines:
-                     line.set_data([], [])
-                     line.set_3d_properties([])
-                 return lines
-             def animate(i):
-                 if i % 10 == 0:
-                     percentage = (i / (n_sim - 1)) * 100
-                     print(f"Progress: {percentage:.2f}%")
-                 for j, line in enumerate(lines):
-                     base_pos = self.simulation.trajectory[j, i]
-                     end_pos = self.simulation.trajectory[j, i + 1]
-                     line.set_data(
-                         [base_pos[0], end_pos[0]],
-                         [base_pos[1], end_pos[1]]
+diff --git a/core/geometry.py b/core/geometry.py
+index 492f4eb7c207d5abb7e2ffaa7f51946c6732003a..e80dc1e3a93740a8adc4b4ba21ef2504246da44b 100644
+--- a/core/geometry.py
++++ b/core/geometry.py
+@@ -99,51 +99,50 @@ def _handle_drop_outside(
+     vec : np.ndarray
+         修正後のベクトル
+     base_pos : np.ndarray
+         曲げた後の新しい開始位置（通常は交点）
+     stick_status : int
+         更新後の stick_status 値
+     """
+ 
+     angle_rad = 2 * np.pi / 70  # 70角形分の角度
+     max_iterations = 100  # 無限ループ防止
+     iteration = 0
+ 
+     while iteration < max_iterations:
+         intersect, remain = _line_sphere_intersection(
+             base_pos, base_pos + vec, constants["drop_r"]
+         )
+         normal = intersect / (np.linalg.norm(intersect) + 1e-12)
+ 
+         vec = bend_along_sphere_surface(vec, normal, angle_rad)
+         base_pos = intersect
+         candidate = base_pos + vec * remain
+ 
+         status = _io_check_drop(candidate, constants, base_pos)
+ 
+         if status == "inside":
+-            stick_status = max(0, stick_status - 1)
+             break
+         elif stick_status == 0:
+             stick_status = int(surface_time * sample_rate_hz)
+             break
+ 
+         iteration += 1
+ 
+     return vec, base_pos, stick_status
+ 
+ class IOStatus:
+     INSIDE = "inside"
+     TEMP_ON_SURFACE = "temp_on_surface"
+     TEMP_ON_EDGE = "temp_on_edge"
+     OUTSIDE = "outside"
+ 
+ class BaseShape:
+     def __init__(self, constants):
+         self.constants = constants
+ 
+     def get_limits(self):
+         # ここで一括管理（すべてのShapeはこのまま継承）
+         keys = ['x_min', 'x_max', 'y_min', 'y_max', 'z_min', 'z_max']
+         return tuple(float(self.constants[k]) for k in keys)
+ 
+     def io_check(self, *args, **kwargs):

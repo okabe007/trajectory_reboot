@@ -121,7 +121,6 @@ def _handle_drop_outside(
         status = _io_check_drop(candidate, constants, base_pos)
 
         if status == "inside":
-            stick_status = max(0, stick_status - 1)
             break
         elif stick_status == 0:
             stick_status = int(surface_time * sample_rate_hz)
