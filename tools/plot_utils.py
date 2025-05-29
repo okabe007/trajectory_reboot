@@ -104,11 +104,18 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
         axs[2].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # YZ
 
     elif shape == "spot":
-        medium_r = spot_r
-        center_z = constants.get("spot_bottom_height", 0.0) + egg_r
-        axs[0].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XY
-        axs[1].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # XZ
-        axs[2].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # YZ
+        R = spot_r
+        bottom_r = constants.get("spot_bottom_r", R)
+        bottom_h = constants.get("spot_bottom_height", 0.0)
+
+        # XY 平面: 底面半径で塗りつぶす
+        axs[0].add_patch(Circle((0, 0), bottom_r, color="pink", alpha=0.3))
+
+        # XZ / YZ 平面: 球面断面を塗りつぶし
+        x = np.linspace(-bottom_r, bottom_r, 200)
+        z = np.sqrt(np.clip(R ** 2 - x**2, 0.0, None))
+        axs[1].fill_between(x, bottom_h, z, color="pink", alpha=0.3)
+        axs[2].fill_between(x, bottom_h, z, color="pink", alpha=0.3)
 
     # 卵子描画（円）
     egg_kw = dict(color="yellow", alpha=0.6, edgecolor="gray", linewidth=0.5)
