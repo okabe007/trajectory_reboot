@@ -1,135 +1,62 @@
-diff --git a/core/simulation.py b/core/simulation.py
-index f956a95a20ecafb31f2e962eea22ba2694092cf5..3f19306cf17431a52731cd050c770a043d2ca985 100644
---- a/core/simulation.py
-+++ b/core/simulation.py
-@@ -350,118 +350,130 @@ class SpermSimulation:
-         elif shape == "ceros":
-             shape_obj = CerosShape(self.constants)
-         else:
-             raise ValueError(f"Unsupported shape: {shape}")
+diff --git a/tools/plot_utils.py b/tools/plot_utils.py
+index 8192b827d73a2c76c77f7ef750ac338faacd84cd..6f4dc72a1feccf2a3f352870eb0a1ec1d286ca56 100644
+--- a/tools/plot_utils.py
++++ b/tools/plot_utils.py
+@@ -89,53 +89,54 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
+     if max_sperm is None:
+         max_sperm = trajs.shape[0]
  
-         # ---- シミュレーション設定 -------------------------------------
-         number_of_sperm  = int(self.constants.get("number_of_sperm", 10))
-         number_of_steps  = int(self.constants.get("number_of_steps", 10))
-         step_len         = self.constants["step_length"]     # ← mm / step
-         seed_val         = self.constants.get("seed_number")
-         if seed_val is not None and str(seed_val).lower() != "none":
-             try:
-                 seed_int = int(seed_val)
-                 # --- 全ての乱数生成を同じシードで制御するため ---
-                 np.random.seed(seed_int)
-                 rng = np.random.default_rng(seed_int)
-             except Exception:
-                 rng = np.random.default_rng()
-         else:
-             rng = np.random.default_rng()
+     # 軌跡描画
+     for s in range(min(max_sperm, trajs.shape[0])):
+         axs[0].plot(trajs[s, :, 0], trajs[s, :, 1])  # XY
+         axs[1].plot(trajs[s, :, 0], trajs[s, :, 2])  # XZ
+         axs[2].plot(trajs[s, :, 1], trajs[s, :, 2])  # YZ
  
-         self.trajectory = []   # ← 毎 run() でリセット
-         prev_states = [SpotIO.INSIDE for _ in range(number_of_sperm)]
-         bottom_modes = [False for _ in range(number_of_sperm)]
-         stick_statuses = [0 for _ in range(number_of_sperm)]
-+        surface_modes = [False for _ in range(number_of_sperm)]
+     # 背景（メディウム）描画
+     if shape == "drop":
+         medium_r = drop_r
+         center = (0.0, 0.0)
+         axs[0].add_patch(Circle(center, medium_r, color="pink", alpha=0.3))  # XY
+         axs[1].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XZ
+         axs[2].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # YZ
  
-         # ---- ループ ---------------------------------------------------
-         for rep in range(int(sim_repeat)):
-             for i in range(number_of_sperm):
+     elif shape == "spot":
+         medium_r = spot_r
+         center_z = constants.get("spot_bottom_height", 0.0) + egg_r
+         axs[0].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XY
+         axs[1].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # XZ
+         axs[2].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # YZ
  
-                 pos = shape_obj.initial_position()     # mm
-                 traj = [pos.copy()]
-                 
-                 # 初期方向
-                 vec = rng.normal(size=3)
-                 vec /= np.linalg.norm(vec) + 1e-12
+     # 卵子描画（円）
+-    axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, color="yellow", alpha=0.6))  # XY
+-    axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, color="yellow", alpha=0.6))  # XZ
+-    axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, color="yellow", alpha=0.6))  # YZ
++    egg_kw = dict(color="yellow", alpha=0.6, edgecolor="lightgray", linewidth=0.5)
++    axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, **egg_kw))  # XY
++    axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, **egg_kw))  # XZ
++    axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, **egg_kw))  # YZ
  
-                 for j in range(number_of_steps):
-                     if j > 0:
-                         vec = _perturb_direction(vec, self.constants["deviation"], rng)
-+                    if shape == "drop" and surface_modes[i] and stick_statuses[i] > 0:
-+                        normal = pos / (np.linalg.norm(pos) + 1e-12)
-+                        vec = vec - np.dot(vec, normal) * normal
-+                        vec /= np.linalg.norm(vec) + 1e-12
-                     if shape == "spot" and bottom_modes[i] and stick_statuses[i] > 0:
-                         vec[2] = 0.0
-                         vec /= np.linalg.norm(vec) + 1e-12
-                     candidate = pos + vec * step_len
-                     if shape == "drop":
-                         base_pos = pos
-                         move_len = step_len
-                         status = _io_check_drop(candidate, self.constants, base_pos)
-                         if status == "outside":
-                             vec, base_pos, stick_statuses[i] = _handle_drop_outside(
-                                 vec,
-                                 base_pos,
-                                 self.constants,
-                                 surface_time,
-                                 sample_rate_hz,
-                                 stick_statuses[i]
-                             )
-+                            if stick_statuses[i] > 0:
-+                                surface_modes[i] = True
-                             candidate = base_pos + vec * move_len
-                         
-                         
-                     elif shape == "spot":
-                         prev = prev_states[i]
-                         candidate, status, bottom_hit = _io_check_spot(
-                             pos, candidate, self.constants, prev, stick_statuses[i]
-                         )
-                         vec = (candidate - pos) / step_len
-                         if bottom_hit:
-                             bottom_modes[i] = True
-                             if stick_statuses[i] == 0:
-                                 stick_statuses[i] = int(
-                                     self.constants["surface_time"]
-                                     / self.constants["sample_rate_hz"]
-                                 )
+     # 軸とアスペクト比
+     axs[0].set_title("XY")
+     axs[1].set_title("XZ")
+     axs[2].set_title("YZ")
  
-                     disp_len = np.linalg.norm(candidate - pos)
-                     max_len = step_len
-                     if disp_len > max_len * 1.05:
-                         print(
-                             f"[ERROR] displacement {disp_len} mm exceeds "
-                             f"step_length {max_len} mm at rep={rep}, sperm={i}, step={j}"
-                         )
-                         print(f"pos={pos}, candidate={candidate}, vec={vec}")
-                         raise RuntimeError("step length exceeded")
+     _set_common_2d_ax(axs[0], (x_min, x_max), (y_min, y_max), "X", "Y")
+     _set_common_2d_ax(axs[1], (x_min, x_max), (z_min, z_max), "X", "Z")
+     _set_common_2d_ax(axs[2], (y_min, y_max), (z_min, z_max), "Y", "Z")
  
-                     pos = candidate
-                     traj.append(pos.copy())
-                     if shape == "spot":
-                         prev_states[i] = status
-                         if bottom_modes[i]:
-                             if stick_statuses[i] > 0:
-                                 stick_statuses[i] -= 1
-                             if stick_statuses[i] == 0:
-                                 bottom_modes[i] = False
-+                    if shape == "drop" and surface_modes[i]:
-+                        if stick_statuses[i] > 0:
-+                            stick_statuses[i] -= 1
-+                        if stick_statuses[i] == 0:
-+                            surface_modes[i] = False
- 
-                     if rep == 0 and i == 0 and j == 0:
-                         print(f"[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec*step_len):.5f}")
- 
-                 self.trajectory.append(np.vstack(traj))
-         self.trajectories = np.array(self.trajectory)
-         print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, "
-               f"step_len={step_len} mm")
+     fig.tight_layout()
+     if save_path:
+         fig.savefig(save_path)
+     if show:
+         plt.show()
  
  
- 
-     import matplotlib.pyplot as plt
- 
-     def plot_trajectories(self, max_sperm=5, save_path=None):
-         """
-         インスタンスのself.trajectory（リスト of N×3 配列）を可視化
-         max_sperm: 表示する精子軌跡の最大本数
-         save_path: Noneなら画面表示のみ、パス指定で保存
-         """
-         import matplotlib.pyplot as plt
-         import numpy as np
-         import os
- 
-         trajectories = np.array(self.trajectory)
-         constants = self.constants
+ # =======================
+ # 🟨 3D用の補助描画関数
+ # =======================
+ def draw_egg_3d(ax: plt.Axes, constants: dict) -> None:
+     egg_x, egg_y, egg_z = _egg_position(constants)
+     r = constants.get("gamete_r", 0.15)
+     u = np.linspace(0, 2 * np.pi, 30)
+     v = np.linspace(0, np.pi, 30)
