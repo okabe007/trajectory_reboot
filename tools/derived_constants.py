@@ -12,7 +12,7 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
     """
     # ---------- 基本パラメータ ------------------------------------------
     vsl     = float(constants.get("vsl", 0.0))            # mm/s
-    hz      = float(constants.get("sampl_rate_hz", 1.0))  # Hz
+    hz      = float(constants.get("sample_rate_hz", 1.0))  # Hz
 
     # 単位変換 -----------------------------------------------------
     gamete_raw = float(constants.get("gamete_r", 0.0))

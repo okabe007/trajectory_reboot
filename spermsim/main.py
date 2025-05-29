@@ -111,13 +111,13 @@ def get_constants_from_gui(selected_data, shape, volume, sperm_conc):
     constants['spot_angle']        = float(selected_data.get('spot_angle', 60))
     constants['vsl']               = float(selected_data.get('vsl', 0.13))
     constants['deviation']         = float(selected_data.get('deviation', 0.04))
-    constants['sampl_rate_hz']     = float(selected_data.get('sampl_rate_hz', 2))
+    constants['sample_rate_hz']     = float(selected_data.get('sample_rate_hz', 2))
     constants['sim_min']           = float(selected_data.get('sim_min', 10))
     constants['gamete_r']          = float(selected_data.get('gamete_r', 0.15))
     constants['surface_time']      = float(selected_data.get('surface_time', 0))
     constants['stick_sec']         = int(selected_data.get('stick_sec', 2))
-    constants['stick_steps'] = constants['stick_sec'] * constants['sampl_rate_hz']
-    constants['step_length'] = constants['vsl'] / constants['sampl_rate_hz']
+    constants['stick_steps'] = constants['stick_sec'] * constants['sample_rate_hz']
+    constants['step_length'] = constants['vsl'] / constants['sample_rate_hz']
     constants['limit'] = 1e-10
     egg_localization = selected_data.get('egg_localization', 'bottom_center').strip()
     constants['egg_localization'] = egg_localization
@@ -348,7 +348,7 @@ def cut_and_bend_vertex(vertex_point, base_position, remaining_distance, constan
         new_edge = random.choice(filtered_edges)
     new_temp_position = vertex_point + new_edge * move_on_new_edge
     intersection_point = vertex_point
-    new_remaining_distance = constants['vsl'] / constants['sampl_rate_hz']
+    new_remaining_distance = constants['vsl'] / constants['sample_rate_hz']
     return intersection_point, new_temp_position, new_remaining_distance
 def cut_and_bend_bottom(self, IO_status, base_position, temp_position, remaining_distance, constants):
     """
@@ -372,7 +372,7 @@ def cut_and_bend_bottom(self, IO_status, base_position, temp_position, remaining
         raise RuntimeError("vector finished on the surface: redo")
     else:
         last_vec_adjusted = last_vec / nv * remaining_distance
-    threshold = constants['vsl'] / constants['sampl_rate_hz'] * 1e-7
+    threshold = constants['vsl'] / constants['sample_rate_hz'] * 1e-7
     if LA.norm(last_vec_adjusted) < threshold:
         raise ValueError("last_vec_adjusted is too small; simulation aborted.")
     temp_position = intersection_point + last_vec_adjusted
@@ -1028,7 +1028,7 @@ class SpermSimulation:
 
         if "number_of_steps" not in self.constants:
             sim_min = float(self.constants['sim_min'])
-            sample_rate = float(self.constants['sampl_rate_hz'])
+            sample_rate = float(self.constants['sample_rate_hz'])
             steps = int(sim_min * 60 * sample_rate)
             self.constants['number_of_steps'] = steps
 
@@ -1287,7 +1287,7 @@ class SpermSimulation:
                 continue
             elif IO_status == IOStatus.SPHERE_OUT:
                 if stick_status == 0:
-                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
+                    stick_status = int(constants['surface_time'] / constants['sample_rate_hz'])
                 if shape == "drop":
                     new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_drop(
                         self.trajectory[j, i - 1],
@@ -1331,7 +1331,7 @@ class SpermSimulation:
                 continue
             elif IO_status == IOStatus.SPOT_EDGE_OUT:
                 if stick_status == 0:
-                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
+                    stick_status = int(constants['surface_time'] / constants['sample_rate_hz'])
                 (new_temp_pos,
                  intersection_point,
                  remaining_distance,
@@ -1344,7 +1344,7 @@ class SpermSimulation:
                 continue
             elif IO_status == IOStatus.BOTTOM_OUT:
                 if stick_status == 0:
-                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
+                    stick_status = int(constants['surface_time'] / constants['sample_rate_hz'])
                 (new_temp_pos,
                  intersection_point,
                  remaining_distance) = cut_and_bend_bottom(
@@ -1356,7 +1356,7 @@ class SpermSimulation:
                 continue
             elif IO_status in [IOStatus.SURFACE_OUT, IOStatus.EDGE_OUT]:
                 if stick_status == 0:
-                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
+                    stick_status = int(constants['surface_time'] / constants['sample_rate_hz'])
                 (new_temp_pos,
                  intersection_point,
                  remaining_distance) = cut_and_bend_cube(
@@ -1368,7 +1368,7 @@ class SpermSimulation:
                 continue
             elif IO_status == IOStatus.VERTEX_OUT:
                 if stick_status == 0:
-                    stick_status = int(constants['surface_time'] / constants['sampl_rate_hz'])
+                    stick_status = int(constants['surface_time'] / constants['sample_rate_hz'])
                 (intersection_point,
                  new_temp_pos,
                  remaining_distance) = cut_and_bend_vertex(
@@ -2425,7 +2425,7 @@ class SpermTrajectoryVisualizer:
                 f"vol: {self.constants['volume']} μl, "
                 f"conc: {self.constants['sperm_conc']}/ml, "
                 f"vsl: {self.constants['vsl']} mm, "
-                f"sampling: {self.constants['sampl_rate_hz']} Hz,\n"
+                f"sampling: {self.constants['sample_rate_hz']} Hz,\n"
                 f"dev: {self.constants['deviation']}, "
                 f"stick: {self.constants['stick_sec']} sec,\n"
                 f"sperm/egg interaction: {contacts_count} during {self.constants['sim_min']} min, "
@@ -2554,7 +2554,7 @@ def setup_database(conn):
                 image_id        TEXT,
                 mov_id          TEXT,
                 spot_angle      INTEGER,
-                sampl_rate_hz   INTEGER,
+                sample_rate_hz   INTEGER,
                 seed_number     TEXT
             )
         ''',
@@ -2577,7 +2577,7 @@ def setup_database(conn):
                 sim_min          REAL,
                 stick_sec        INTEGER,
                 spot_angle       INTEGER,
-                sampl_rate_hz    INTEGER,
+                sample_rate_hz    INTEGER,
                 egg_localization TEXT,
                 mean_contact_hr  REAL,
                 SD1              REAL,
@@ -2605,7 +2605,7 @@ def insert_sim_record(conn, exp_id, version, constants, image_id, mov_id, contac
     fields = [
         "exp_id", "version", "shape", "volume", "sperm_conc", "N_contact",
         "vsl", "stick_sec", "sim_min", "deviation", "egg_localization",
-        "image_id", "mov_id", "spot_angle", "sampl_rate_hz", "seed_number"
+        "image_id", "mov_id", "spot_angle", "sample_rate_hz", "seed_number"
     ]
 
     # 値の組み立て（spot_angle は spot 形状以外では None）
@@ -2624,7 +2624,7 @@ def insert_sim_record(conn, exp_id, version, constants, image_id, mov_id, contac
         image_id,
         mov_id,
         int(constants['spot_angle']) if constants['shape'] == 'spot' else None,
-        int(constants['sampl_rate_hz']),
+        int(constants['sample_rate_hz']),
         constants.get('seed_number', 'None'),
     ]
 
@@ -2647,7 +2647,7 @@ def aggregate_results(conn, exp_id):
     c = conn.cursor()
     c.execute('''
         SELECT id, shape, sperm_conc, volume, vsl, deviation,
-               sim_min, stick_sec, spot_angle, sampl_rate_hz,
+               sim_min, stick_sec, spot_angle, sample_rate_hz,
                egg_localization, N_contact
           FROM basic_data
     ''')
@@ -2665,7 +2665,7 @@ def aggregate_results(conn, exp_id):
         sim_min           = float(rec[6])
         stick_sec         = rec[7]
         spot_angle        = rec[8]
-        sampl_rate_hz     = rec[9]
+        sample_rate_hz     = rec[9]
         egg_loc_val       = rec[10]
         N_contact         = rec[11]
         N_sperm = int(sperm_conc_val * volume_val / 1000)
@@ -2674,13 +2674,13 @@ def aggregate_results(conn, exp_id):
         key = (
             shape_val, sperm_conc_val, volume_val, vsl_val,
             deviation_val, sim_min, stick_sec, spot_angle,
-            sampl_rate_hz, egg_loc_val
+            sample_rate_hz, egg_loc_val
         )
         grouping[key].append((sim_id, ratio, N_sperm, cps))
     for key, values in grouping.items():
         (shape_val, sperm_conc_val, volume_val, vsl_val,
          deviation_val, sim_min, stick_sec, spot_angle,
-         sampl_rate_hz, egg_loc_val) = key
+         sample_rate_hz, egg_loc_val) = key
         total_sim         = len(values)
         ratios            = [v[1] for v in values]
         Ns                = [v[2] for v in values]
@@ -2694,14 +2694,14 @@ def aggregate_results(conn, exp_id):
         c.execute('''
             INSERT OR REPLACE INTO summary (
                 simulation_id, shape, sperm_conc, volume, vsl, deviation,
-                sim_min, stick_sec, spot_angle, sampl_rate_hz, egg_localization,
+                sim_min, stick_sec, spot_angle, sample_rate_hz, egg_localization,
                 mean_contact_hr, SD1, N_sperm, C_per_N, SD2, total_simulations
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             new_latest_sim_id, shape_val, sperm_conc_val, volume_val,
             vsl_val, deviation_val, sim_min, stick_sec, spot_angle,
-            sampl_rate_hz, egg_loc_val,
+            sample_rate_hz, egg_loc_val,
             mean_contact_hr, SD1_val, mean_N_sperm, C_per_N_val,
             SD2_val, total_sim
         ))
@@ -2732,7 +2732,7 @@ def load_previous_selection():
     n_repeat_default             = get_str("n_repeat",                  "3")
     seed_number_default          = get_str("seed_number",              "None")
     sim_min_default              = get_str("sim_min",                   "10")
-    sampl_rate_hz_default        = get_str("sampl_rate_hz",            "2")
+    sample_rate_hz_default        = get_str("sample_rate_hz",            "2")
     spot_angle_default           = get_str("spot_angle",               "60")
     vsl_default                  = get_str("vsl",                       "0.15")
     deviation_default            = get_str("deviation",                 "0.4")
@@ -2760,7 +2760,7 @@ def load_previous_selection():
         "n_repeat": n_repeat_default,
         "seed_number": seed_number_default,
         "sim_min": sim_min_default,
-        "sampl_rate_hz": sampl_rate_hz_default,
+        "sample_rate_hz": sample_rate_hz_default,
         "spot_angle": spot_angle_default,
         "vsl": vsl_default,
         "deviation": deviation_default,
@@ -2782,7 +2782,7 @@ def save_previous_selection(values):
     if not config.has_section(userselection_section):
         config.add_section(userselection_section)
     single_keys = [
-        "n_repeat", "seed_number", "sim_min", "sampl_rate_hz", "spot_angle",
+        "n_repeat", "seed_number", "sim_min", "sample_rate_hz", "spot_angle",
         "vsl", "deviation", "stick_sec", "egg_localization",
         "gamete_r", "initial_direction", "initial_stick", "analysis_type"
     ]
@@ -2823,7 +2823,7 @@ def show_selection_ui(no_gui=False):
         "n_repeat_options":               ["1", "2", "3", "4", "5"],
         "seed_number_options":            ["None", "0", "1","2","3"],
         "sim_min_options":                ["0.2", "1", "10", "20","60","100"],
-        "sampl_rate_hz_options":          ["1", "2", "3", "4"],
+        "sample_rate_hz_options":          ["1", "2", "3", "4"],
         "spot_angle_options":             ["30", "50","60","70", "90"],
         "vsl_options":                    ["0.073","0.1", "0.11", "0.12", "0.13", "0.14","0.15"],
         "deviation_options":              ["0", "0.2", "0.3","0.4","0.8","1.6", "3.2", "6.4", "12.8"],
@@ -2837,7 +2837,7 @@ def show_selection_ui(no_gui=False):
         ("繰り返し回数 (N Repeat)",             "n_repeat_options"),
         ("乱数シード (Seed Number)",            "seed_number_options"),
         ("シミュレーション時間 (Sim Min)",      "sim_min_options"),
-        ("サンプリングレート (Sample Rate Hz)", "sampl_rate_hz_options"),
+        ("サンプリングレート (Sample Rate Hz)", "sample_rate_hz_options"),
         ("形状 (Shape)",                        "shapes"),
         ("Spot角度 (Spot Angle)",              "spot_angle_options"),
         ("体積 (Volume)",                      "volumes"),
@@ -3001,7 +3001,7 @@ def main():
     spot_angle        = float(selected_data.get('spot_angle', 70))
     vsl               = float(selected_data.get('vsl', 0.13))
     deviation         = float(selected_data.get('deviation', 0.4))
-    sampl_rate_hz     = float(selected_data.get('sampl_rate_hz', 2))
+    sample_rate_hz     = float(selected_data.get('sample_rate_hz', 2))
     sim_min           = float(selected_data.get('sim_min', 10))
     gamete_r          = float(selected_data.get('gamete_r', 0.1))
     stick_sec         = int(selected_data.get('stick_sec', 2))
@@ -3049,11 +3049,11 @@ def main():
                 constants.update({
                     'spot_angle_rad': np.deg2rad(constants['spot_angle']),
                     'egg_volume'    : 4 * np.pi * constants['gamete_r']**3 / 3,
-                    'stick_steps'   : constants['stick_sec'] * constants['sampl_rate_hz'],
+                    'stick_steps'   : constants['stick_sec'] * constants['sample_rate_hz'],
                     'inner_angle'   : 2 * np.pi / 70,
                 })
                 constants['number_of_steps'] = int(
-                    constants['sim_min'] * 60 * constants['sampl_rate_hz']
+                    constants['sim_min'] * 60 * constants['sample_rate_hz']
                 )
 
                 # ====================================================

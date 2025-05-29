@@ -1,7 +1,135 @@
 import numpy as np
 from numpy import linalg as LA
 from typing import Dict      # ★ この行を追加
+from typing import Tuple
 
+def _io_check_drop(
+    position: np.ndarray, constants: dict, base_position: np.ndarray
+) -> str:
+    """Return in/out status for drop shape with extended boundary check."""
+
+    r = constants.get("drop_r", 0.0)
+    limit = constants.get("limit", 1e-9)
+
+    dist = np.linalg.norm(position)
+
+    if dist > r + limit:
+        return "outside"
+    if dist < r - limit:
+        return "inside"
+
+    # Near the border, extend the vector from ``base_position``
+    # to ``position`` and re-evaluate.
+    vector = position - base_position
+    extended_position = base_position + vector * 1.2
+    extended_dist = np.linalg.norm(extended_position)
+
+    if extended_dist <= r:
+        return "inside"
+    return "outside"
+
+
+def bend_along_sphere_surface(vec: np.ndarray, normal: np.ndarray, angle_rad: float) -> np.ndarray:
+    """
+    接線ベクトル `vec` を、球面の法線 `normal` に沿って `angle_rad` ラジアンだけ
+    内側（球の中心方向）に曲げた新しい単位ベクトルを返す。
+
+    Parameters
+    ----------
+    vec : np.ndarray
+        現在の進行方向ベクトル（正規化されていなくてもOK）
+    normal : np.ndarray
+        球面の法線ベクトル（原点中心 → 接触点方向）※正規化されていることを推奨
+    angle_rad : float
+        接線から法線に向かって回転させる角度（ラジアン）
+
+    Returns
+    -------
+    np.ndarray
+        曲げた後の正規化済み方向ベクトル
+    """
+    # vec と normal で張る平面内で回転
+    # tangent: vec から normal 成分を除いた接線ベクトル
+    tangent = vec - np.dot(vec, normal) * normal
+    tangent /= np.linalg.norm(tangent) + 1e-12
+
+    # 接線と法線ベクトルの間で、angle_radだけ回転（内側方向に）
+    new_vec = (
+        np.cos(angle_rad) * tangent - np.sin(angle_rad) * normal
+    )
+
+    return new_vec / (np.linalg.norm(new_vec) + 1e-12)
+
+def _line_sphere_intersection(p0: np.ndarray, p1: np.ndarray, radius: float) -> Tuple[np.ndarray, float]:
+    """
+    線分 p0 → p1 が原点中心の球（半径 radius）と交差する場合、
+    交点と残りの移動距離を返す。交差しない場合は p0 を返す。
+    """
+    d = p1 - p0
+    d_norm = np.linalg.norm(d) + 1e-12
+    d_unit = d / d_norm
+    a = np.dot(d_unit, d_unit)
+    b = 2 * np.dot(p0, d_unit)
+    c = np.dot(p0, p0) - radius ** 2
+    discriminant = b ** 2 - 4 * a * c
+
+    if discriminant < 0:
+        return p0, 0.0  # 球と交差しない
+
+    t = (-b - np.sqrt(discriminant)) / (2 * a)
+    t = max(0.0, min(t, d_norm))  # 線分内のみに制限
+    intersect = p0 + d_unit * t
+    remain = d_norm - t
+    return intersect, remain
+
+def _handle_drop_outside(
+    vec: np.ndarray,
+    base_pos: np.ndarray,
+    constants: dict,
+    surface_time: float,
+    sample_rate_hz: int,
+    stick_status: int
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """
+    drop形状でoutsideと判定された場合に、球面上に沿って曲げて這わせながらinsideに戻す処理。
+    stick_status の管理も行う。
+
+    Returns
+    -------
+    vec : np.ndarray
+        修正後のベクトル
+    base_pos : np.ndarray
+        曲げた後の新しい開始位置（通常は交点）
+    stick_status : int
+        更新後の stick_status 値
+    """
+
+    angle_rad = 2 * np.pi / 70  # 70角形分の角度
+    max_iterations = 100  # 無限ループ防止
+    iteration = 0
+
+    while iteration < max_iterations:
+        intersect, remain = _line_sphere_intersection(
+            base_pos, base_pos + vec, constants["drop_r"]
+        )
+        normal = intersect / (np.linalg.norm(intersect) + 1e-12)
+
+        vec = bend_along_sphere_surface(vec, normal, angle_rad)
+        base_pos = intersect
+        candidate = base_pos + vec * remain
+
+        status = _io_check_drop(candidate, constants, base_pos)
+
+        if status == "inside":
+            stick_status = max(0, stick_status - 1)
+            break
+        elif stick_status == 0:
+            stick_status = int(surface_time * sample_rate_hz)
+            break
+
+        iteration += 1
+
+    return vec, base_pos, stick_status
 
 class IOStatus:
     INSIDE = "inside"

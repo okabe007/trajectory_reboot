@@ -1,4 +1,4 @@
-# Python
+# Pythonキャッシュとビルド生成物
 __pycache__/
 *.py[cod]
 *.so
@@ -7,12 +7,25 @@ __pycache__/
 dist/
 build/
 
-# macOS
+# macOS 特有のファイル
 .DS_Store
 
-# その他エディタやOS依存
+# エディタや仮想環境の設定ファイル
 .env
 .vscode/
 .idea/
 *.swp
 venv/
+
+# メディアファイル（追跡対象から除外したいもの）
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.tif
+*.tiff
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm

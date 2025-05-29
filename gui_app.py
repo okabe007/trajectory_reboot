@@ -19,7 +19,7 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), "sperm_config.ini")
 PARAM_ORDER = [
     "shape", "spot_angle", "vol", "sperm_conc", "vsl", "deviation",
     "surface_time", "egg_localization", "gamete_r", "sim_min",
-    "sampl_rate_hz", "seed_number", "sim_repeat", "display_mode",
+    "sample_rate_hz", "seed_number", "sim_repeat", "display_mode",
 ]
 
 # デフォルト設定
@@ -34,7 +34,7 @@ default_values = {
     "egg_localization": "bottom_center",
     "gamete_r": 0.04,          # mm  (GUI 表示は µm)
     "sim_min": 1.0,            # min 実測値ではなく「分」→秒に変換は simulation 側
-    "sampl_rate_hz": 4.0,
+    "sample_rate_hz": 4.0,
     "seed_number": "None",
     "sim_repeat": 1,
     "display_mode": ["2D"],    # 文字列リスト
@@ -108,7 +108,7 @@ def load_config() -> dict:
         raw = c.get(k, str(default_values[k]))
         try:
             if k in ["vsl", "spot_angle", "gamete_r", "sperm_conc",
-                     "vol", "sampl_rate_hz", "sim_min"]:
+                     "vol", "sample_rate_hz", "sim_min"]:
                 values[k] = float(raw)
             elif k == "sim_repeat":
                 values[k] = int(float(raw))
@@ -237,12 +237,12 @@ class SimApp(tk.Tk):
             ttk.Radiobutton(f_simmin, text=str(v), variable=self.tk_vars["sim_min"],
                             value=float(v)).pack(side="left")
 
-        # --- sampl_rate_hz ----------------------------------------------
-        self.tk_vars["sampl_rate_hz"] = tk.DoubleVar()
-        ttk.Label(parent, text="sampl_rate_hz:").pack(anchor="w", padx=10, pady=(10, 0))
+        # --- sample_rate_hz ----------------------------------------------
+        self.tk_vars["sample_rate_hz"] = tk.DoubleVar()
+        ttk.Label(parent, text="sample_rate_hz:").pack(anchor="w", padx=10, pady=(10, 0))
         f_hz = ttk.Frame(parent); f_hz.pack(anchor="w", padx=30)
         for v in [1, 2, 3, 4]:
-            ttk.Radiobutton(f_hz, text=str(v), variable=self.tk_vars["sampl_rate_hz"],
+            ttk.Radiobutton(f_hz, text=str(v), variable=self.tk_vars["sample_rate_hz"],
                             value=float(v)).pack(side="left")
 
         # --- seed_number ----------------------------------------------
@@ -293,7 +293,7 @@ class SimApp(tk.Tk):
     def _on_save(self) -> None:
         """
         1. GUI の Tk 変数 → self.config_data へ安全にコピー
-           （vsl は mm/s、gamete_r は mm）
+        （vsl は mm/s、gamete_r は mm）
         2. .ini に保存
         3. シミュレーションを実行
         """
@@ -364,37 +364,41 @@ class SimApp(tk.Tk):
 
         # --- ③ generic parameters ------------------------------------
         vsl = float(self.config_data.get("vsl", 0.0))
-        hz = float(self.config_data.get("sampl_rate_hz", 1.0))
+        hz = float(self.config_data.get("sample_rate_hz", 1.0))  # ← 明確に統一
         self.config_data.update(
             step_length=vsl / hz if hz else 0.0,
             limit=1e-9,
         )
 
-        # --- シミュレーションステップ数を sim_min と sampl_rate_hz から計算 ---
+        # --- シミュレーションステップ数を sim_min と sample_rate_hz から計算 ---
         sim_min = float(self.config_data.get("sim_min", 0.0))
         self.config_data["number_of_steps"] = int(sim_min * 60 * hz)
 
         # --- ④ 派生値計算（互換性用） ---------------------------------
         self.config_data = calculate_derived_constants(self.config_data)
 
-        # --- ③ ini 保存 -----------------------------------------------
+        # --- ⑤ ini 保存 -----------------------------------------------
         save_config(self.config_data)
-        # --- ④ シミュレーション実行 --------------------------------------
+
+        # --- ⑥ シミュレーション実行 --------------------------------------
         sim = SpermSimulation(self.config_data)
-        sim.run(self.config_data["sim_repeat"])
+        sim.run(
+            self.config_data["sim_repeat"],
+            self.config_data["surface_time"],
+            self.config_data["sample_rate_hz"]
+        )
 
         if "movie" in self.config_data["display_mode"]:
             from spermsim.CoreMovie import render_3d_movie
             render_3d_movie(sim.trajectories, sim.constants)
 
-        # --- ⑤ 描画 -----------------------------------------------------
+        # --- ⑦ 描画 -----------------------------------------------------
         if "2D" in modes:
             plot_2d_trajectories(np.array(sim.trajectory), self.config_data)
         elif "3D" in modes:
             plot_3d_trajectories(np.array(sim.trajectory), self.config_data)
         elif "movie" in modes:
             sim.plot_movie_trajectories()   # 実装に合わせて
-
 
     # ---------------------------------------------------------------------
     # 起動時に .ini から各 Tk 変数を復元

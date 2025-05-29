@@ -12,6 +12,9 @@ from tools.plot_utils import plot_2d_trajectories
 from core.geometry import CubeShape, DropShape, SpotShape, CerosShape
 from tools.derived_constants import calculate_derived_constants
 from tools.plot_utils import plot_3d_movie_trajectories
+from core.geometry import _handle_drop_outside
+from core.geometry import _io_check_drop
+
 
 
 
@@ -40,32 +43,6 @@ def _perturb_direction(prev: np.ndarray, deviation: float, rng: np.random.Genera
     new_dir /= np.linalg.norm(new_dir) + 1e-12
     return new_dir
 
-
-
-def _io_check_drop(
-    position: np.ndarray, constants: dict, base_position: np.ndarray
-) -> str:
-    """Return in/out status for drop shape with extended boundary check."""
-
-    r = constants.get("drop_r", 0.0)
-    limit = constants.get("limit", 1e-9)
-
-    dist = np.linalg.norm(position)
-
-    if dist > r + limit:
-        return "outside"
-    if dist < r - limit:
-        return "inside"
-
-    # Near the border, extend the vector from ``base_position``
-    # to ``position`` and re-evaluate.
-    vector = position - base_position
-    extended_position = base_position + vector * 1.2
-    extended_dist = np.linalg.norm(extended_position)
-
-    if extended_dist <= r:
-        return "inside"
-    return "outside"
 
 
 class SpotIO:
@@ -322,7 +299,7 @@ class SpermSimulation:
         # --- 型安全化：数値パラメータはfloat/intに変換 ---
         float_keys = [
             "spot_angle", "vol", "sperm_conc", "vsl", "deviation", "surface_time",
-            "gamete_r", "sim_min", "sampl_rate_hz"
+            "gamete_r", "sim_min", "sample_rate_hz"
         ]
         int_keys = [
             "sim_repeat"
@@ -353,7 +330,7 @@ class SpermSimulation:
         # ------------------------------------------------------------------
     # ★★★ ここから run() 全面置換 ★★★
     # ------------------------------------------------------------------
-    def run(self, sim_repeat: int = 1):
+    def run(self, sim_repeat: int, surface_time: float, sample_rate_hz: int):
         """
         sim_repeat 回シミュレーションを実行して
         self.trajectory に各精子の N×3 軌跡配列を格納する。
@@ -418,29 +395,18 @@ class SpermSimulation:
                         base_pos = pos
                         move_len = step_len
                         status = _io_check_drop(candidate, self.constants, base_pos)
-                        if status == "bottom":
-                            step_vec = vec * move_len
-                            if abs(step_vec[2]) < 1e-12:
-                                normal = np.array([0.0, 0.0, 1.0])
-                                vec = _reflect(vec, normal)
-                                candidate = base_pos + vec * move_len
-                            else:
-                                t = (0.0 - base_pos[2]) / step_vec[2]
-                                t = max(0.0, min(1.0, t))
-                                intersect = base_pos + step_vec * t
-                                remain = move_len * (1.0 - t)
-                                normal = np.array([0.0, 0.0, 1.0])
-                                vec = _reflect(vec, normal)
-                                base_pos = intersect
-                                candidate = base_pos + vec * remain
-                            status = _io_check_drop(candidate, self.constants, base_pos)
                         if status == "outside":
-                            intersect, remain = _line_sphere_intersection(
-                                base_pos, candidate, self.constants["drop_r"]
+                            vec, base_pos, stick_statuses[i] = _handle_drop_outside(
+                                vec,
+                                base_pos,
+                                self.constants,
+                                surface_time,
+                                sample_rate_hz,
+                                stick_statuses[i]
                             )
-                            normal = intersect / (np.linalg.norm(intersect) + 1e-12)
-                            vec = _reflect(vec, normal)
-                            candidate = intersect + vec * remain
+                            candidate = base_pos + vec * move_len
+                        
+                        
                     elif shape == "spot":
                         prev = prev_states[i]
                         candidate, status, bottom_hit = _io_check_spot(
@@ -452,7 +418,7 @@ class SpermSimulation:
                             if stick_statuses[i] == 0:
                                 stick_statuses[i] = int(
                                     self.constants["surface_time"]
-                                    / self.constants["sampl_rate_hz"]
+                                    / self.constants["sample_rate_hz"]
                                 )
 
                     disp_len = np.linalg.norm(candidate - pos)
@@ -574,7 +540,7 @@ class SpermSimulation:
                 "egg_localization",
                 "gamete_r",
                 "sim_min",
-                "sampl_rate_hz",
+                "sample_rate_hz",
                 "sim_repeat",
             ]
         )
@@ -617,7 +583,7 @@ class SpermSimulation:
 
         # suptitleにパラメータ2行分
         param_summary = ', '.join(f"{k}={self.constants.get(k)}" for k in ["shape", "vol", "sperm_conc", "vsl", "deviation"])
-        param_summary2 = ', '.join(f"{k}={self.constants.get(k)}" for k in ["surface_time", "egg_localization", "gamete_r", "sim_min", "sampl_rate_hz", "sim_repeat"])
+        param_summary2 = ', '.join(f"{k}={self.constants.get(k)}" for k in ["surface_time", "egg_localization", "gamete_r", "sim_min", "sample_rate_hz", "sim_repeat"])
         fig.suptitle(f"{param_summary}\n{param_summary2}", fontsize=12)
 
         # 本数注釈

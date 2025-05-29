@@ -3,7 +3,7 @@ index 10f62e4..5f98057 100644
 --- a/spermsim/main.py
 +++ b/spermsim/main.py
 @@ -1715,69 +1715,81 @@ class SpermTrajectoryVisualizer:
-                 f"sampling: {self.constants['sampl_rate_hz']} Hz,\n"
+                 f"sampling: {self.constants['sample_rate_hz']} Hz,\n"
                  f"dev: {self.constants['deviation']}, "
                  f"stick: {self.constants['stick_sec']} sec,\n"
                  f"sperm/egg interaction: {contacts_count} during {self.constants['sim_min']} min, "
