@@ -34,7 +34,7 @@ def render_3d_movie(trajs: np.ndarray, constants: dict, save_path=None, show=Tru
     # === 軌跡表示オブジェクトを初期化 ===
     num_sperm = trajs.shape[0]
     num_frames = trajs.shape[1]
-    lines = [ax.plot([], [], [], lw=1)[0] for _ in range(num_sperm)]
+    lines = [ax.plot([], [], [], lw=0.5)[0] for _ in range(num_sperm)]
 
     # === アニメーション更新関数 ===
     def update(frame):

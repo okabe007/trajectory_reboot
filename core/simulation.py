@@ -30,6 +30,8 @@ def IO_check_spot(base_position: np.ndarray, temp_position: np.ndarray, constant
         if r_tip > radius + limit:
             return "sphere_out"
 
+import numpy as np
+import numpy.linalg as LA
 
 def is_vector_meeting_egg(base_position: np.ndarray, temp_position: np.ndarray,
                           egg_center: np.ndarray, gamete_R: float) -> bool:
@@ -39,6 +41,7 @@ def is_vector_meeting_egg(base_position: np.ndarray, temp_position: np.ndarray,
     distance_base = LA.norm(base_position - egg_center)
     distance_tip = LA.norm(temp_position - egg_center)
 
+    # 両端がともに卵子の外なら、ベクトル交差判定を実行
     if distance_base > gamete_R and distance_tip > gamete_R:
         f = base_position - egg_center
         d = temp_position - base_position
@@ -48,56 +51,30 @@ def is_vector_meeting_egg(base_position: np.ndarray, temp_position: np.ndarray,
         discriminant = b**2 - 4 * a * c
         return discriminant >= 0
     else:
+        # 端点のいずれかがすでに球内
         return True
 
-
-# ↓↓ 以下は IO_check_spot 関数に属するコードです。必ず別関数として書いてください。
-
-def IO_check_spot(base_position: np.ndarray, temp_position: np.ndarray, constants: dict, IO_status: str) -> str:
-    radius   = constants['radius']
-    bottom_z = constants['spot_bottom_height']
-    bottom_R = constants['spot_bottom_r']
-    limit    = constants['limit']
-
-    z_tip = temp_position[2]
-    xy_dist = np.sqrt(temp_position[0]**2 + temp_position[1]**2)
-
-    if z_tip > bottom_z + limit:
-        r_tip = LA.norm(temp_position)
-        if r_tip > radius + limit:
-            return "sphere_out"
-        else:
-            return "inside"
-
-    elif z_tip < bottom_z - limit:
-        denom = (temp_position[2] - base_position[2])
-        if denom == 0:
-            return "sphere_out"
-        t = (bottom_z - base_position[2]) / denom
-        if t < 0 or t > 1:
-            return "sphere_out"
-
-        intersect_xy = base_position[:2] + t * (temp_position[:2] - base_position[:2])
-        dist_xy = np.sqrt(intersect_xy[0]**2 + intersect_xy[1]**2)
-
-        if dist_xy < bottom_R + limit:
-            return "bottom_out"
-        else:
-            return "sphere_out"
-
-    elif bottom_z - limit < z_tip < bottom_z + limit:
-        if xy_dist > bottom_R + limit:
-            return "spot_edge_out"
-        elif abs(xy_dist - bottom_R) <= limit:
-            return "border"
-        elif xy_dist < bottom_R - limit:
-            if IO_status in ["spot_edge_out", "polygon_mode"]:
-                return "polygon_mode"
-            else:
-                return "spot_bottom"
-
-    return "inside"
-
+# # def is_vector_meeting_egg(self, base_position, temp_position, egg_center, gamete_R):
+#         vector = temp_position - base_position
+#         if LA.norm(vector) < 1e-9:
+#             sys.exit("zzz")
+#         distance_base = LA.norm(base_position - egg_center)
+#         distance_tip = LA.norm(temp_position - egg_center)
+#         if distance_base <= gamete_R or distance_tip <= gamete_R:
+#             return True
+#         f = base_position - egg_center
+#         a = vector @ vector
+#         b = 2 * (f @ vector)
+#         c = f @ f - gamete_R**2
+#         discriminant = b**2 - 4*a*c
+#         if discriminant < 0:
+#             return False
+#         sqrt_discriminant = np.sqrt(discriminant)
+#         t1 = (-b - sqrt_discriminant) / (2*a)
+#         t2 = (-b + sqrt_discriminant) / (2*a)
+#         if (0 <= t1 <= 1) or (0 <= t2 <= 1):
+#             return True
+#         return False
 
 
 def _make_local_basis(forward: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -447,6 +424,11 @@ class SpermSimulation:
         else:
             rng = np.random.default_rng()
 
+        
+        egg_x, egg_y, egg_z = _egg_position(self.constants)
+        egg_center = np.array([egg_x, egg_y, egg_z])
+        gamete_R = self.constants["gamete_r"]
+        intersection_records = []
         self.trajectory = []
         prev_states = ["inside" for _ in range(number_of_sperm)]
         bottom_modes = [False for _ in range(number_of_sperm)]
@@ -474,6 +456,9 @@ class SpermSimulation:
                         vec /= np.linalg.norm(vec) + 1e-12
 
                     candidate = pos + vec * step_len
+
+                    if j > 0 and is_vector_meeting_egg(traj[-1], candidate, egg_center, gamete_R):
+                        intersection_records.append((i, j))
 
                     if shape == "drop":
                         base_pos = pos
@@ -588,7 +573,7 @@ class SpermSimulation:
                     facecolor="yellow",
                     alpha=0.8,
                     ec="gray",
-                    linewidth=1.0,
+                    linewidth=0.5,
                 )
             )
 
@@ -734,7 +719,7 @@ class SpermSimulation:
             const["z_max"] - const["z_min"],
         ])
 
-        lines = [ax.plot([], [], [], lw=1)[0] for _ in range(n_sperm)]
+        lines = [ax.plot([], [], [], lw=0.7)[0] for _ in range(n_sperm)]
 
         def init():
             for ln in lines:
@@ -773,3 +758,5 @@ class SpermSimulation:
         plt.close(fig)
         print(f"[INFO] 動画を保存しました: {save_path}")
         return save_path
+
+        return np.array(traj), intersection_records

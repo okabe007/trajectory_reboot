@@ -54,7 +54,7 @@ def draw_medium(ax, constants: dict):
              (x_min, y_min, z_max), (x_max, y_min, z_max), (x_max, y_max, z_max),
              (x_min, y_max, z_max), (x_min, y_min, z_max)]
         ):
-            ax.plot([s[0], e[0]], [s[1], e[1]], [s[2], e[2]], color="gray", alpha=0.2)
+            ax.plot([s[0], e[0]], [s[1], e[1]], [s[2], e[2]], color="gray", alpha=0.5)
 
 def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel):
     ax.set_xlim(*xlim)
@@ -255,7 +255,7 @@ def plot_3d_movie_trajectories(trajs: np.ndarray, constants: dict, save_path=Non
             ax.plot(trajs[s, :frame+1, 0],
                     trajs[s, :frame+1, 1],
                     trajs[s, :frame+1, 2],
-                    lw=1)
+                    lw=0.7)
 
     draw_egg(ax, pos, radius)
     
