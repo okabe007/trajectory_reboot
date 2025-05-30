@@ -1,15 +1,8 @@
 diff --git a/tools/plot_utils.py b/tools/plot_utils.py
-index 658f5ba321928c5912aa4da3a0b9085fe19ee062..891a8256b3e849911e5baf2ced7fd585dda16d9d 100644
+index 8192b827d73a2c76c77f7ef750ac338faacd84cd..6f4dc72a1feccf2a3f352870eb0a1ec1d286ca56 100644
 --- a/tools/plot_utils.py
 +++ b/tools/plot_utils.py
-@@ -82,55 +82,62 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
- 
-     shape = constants.get('shape', 'cube').lower()
-     drop_r = float(constants.get('drop_r', 0.0))
-     spot_r = float(constants.get('spot_r', 0.0))
-     egg_r = float(constants.get("gamete_r", 0.05))
-     egg_pos = _egg_position(constants)
- 
+@@ -89,53 +89,54 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
      if max_sperm is None:
          max_sperm = trajs.shape[0]
  
@@ -28,29 +21,20 @@ index 658f5ba321928c5912aa4da3a0b9085fe19ee062..891a8256b3e849911e5baf2ced7fd585
          axs[2].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # YZ
  
      elif shape == "spot":
--        medium_r = spot_r
--        center_z = constants.get("spot_bottom_height", 0.0) + egg_r
--        axs[0].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XY
--        axs[1].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # XZ
--        axs[2].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # YZ
-+        R = spot_r
-+        bottom_r = constants.get("spot_bottom_r", R)
-+        bottom_h = constants.get("spot_bottom_height", 0.0)
-+
-+        # XY 平面: 底面半径で塗りつぶす
-+        axs[0].add_patch(Circle((0, 0), bottom_r, color="pink", alpha=0.3))
-+
-+        # XZ / YZ 平面: 球面断面を塗りつぶし
-+        x = np.linspace(-bottom_r, bottom_r, 200)
-+        z = np.sqrt(np.clip(R ** 2 - x**2, 0.0, None))
-+        axs[1].fill_between(x, bottom_h, z, color="pink", alpha=0.3)
-+        axs[2].fill_between(x, bottom_h, z, color="pink", alpha=0.3)
+         medium_r = spot_r
+         center_z = constants.get("spot_bottom_height", 0.0) + egg_r
+         axs[0].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XY
+         axs[1].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # XZ
+         axs[2].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # YZ
  
      # 卵子描画（円）
-     egg_kw = dict(color="yellow", alpha=0.6, edgecolor="gray", linewidth=0.5)
-     axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, **egg_kw))  # XY
-     axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, **egg_kw))  # XZ
-     axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, **egg_kw))  # YZ
+-    axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, color="yellow", alpha=0.6))  # XY
+-    axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, color="yellow", alpha=0.6))  # XZ
+-    axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, color="yellow", alpha=0.6))  # YZ
++    egg_kw = dict(color="yellow", alpha=0.6, edgecolor="lightgray", linewidth=0.5)
++    axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, **egg_kw))  # XY
++    axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, **egg_kw))  # XZ
++    axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, **egg_kw))  # YZ
  
      # 軸とアスペクト比
      axs[0].set_title("XY")
@@ -70,3 +54,9 @@ index 658f5ba321928c5912aa4da3a0b9085fe19ee062..891a8256b3e849911e5baf2ced7fd585
  
  # =======================
  # 🟨 3D用の補助描画関数
+ # =======================
+ def draw_egg_3d(ax: plt.Axes, constants: dict) -> None:
+     egg_x, egg_y, egg_z = _egg_position(constants)
+     r = constants.get("gamete_r", 0.15)
+     u = np.linspace(0, 2 * np.pi, 30)
+     v = np.linspace(0, np.pi, 30)

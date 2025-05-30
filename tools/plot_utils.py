@@ -119,9 +119,23 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
 
     # 卵子描画（円）
     egg_kw = dict(color="yellow", alpha=0.6, edgecolor="gray", linewidth=0.5)
-    axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, **egg_kw))  # XY
-    axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, **egg_kw))  # XZ
-    axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, **egg_kw))  # YZ
+    axs[0].add_patch(Circle(
+        (egg_pos[0], egg_pos[1]), egg_r,
+        facecolor="yellow", alpha=0.6,
+        edgecolor="gray", linewidth=1.0
+    ))
+
+    axs[1].add_patch(Circle(
+        (egg_pos[0], egg_pos[2]), egg_r,
+        facecolor="yellow", alpha=0.6,
+        edgecolor="gray", linewidth=1.0
+    ))
+
+    axs[2].add_patch(Circle(
+        (egg_pos[1], egg_pos[2]), egg_r,
+        facecolor="yellow", alpha=0.6,
+        edgecolor="gray", linewidth=1.0
+    ))
 
     # 軸とアスペクト比
     axs[0].set_title("XY")

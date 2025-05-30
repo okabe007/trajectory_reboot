@@ -1780,7 +1780,7 @@ class SpermTrajectoryVisualizer:
         ex = self.egg_center[0] + self.egg_radius * np.outer(np.cos(u_egg), np.sin(v_egg))
         ey = self.egg_center[1] + self.egg_radius * np.outer(np.sin(u_egg), np.sin(v_egg))
         ez = self.egg_center[2] + self.egg_radius * np.outer(np.ones_like(u_egg), np.cos(v_egg))
-        # ax.plot_surface(ex, ey, ez, color="yellow", alpha=0.2)
+        ax.plot_surface(ex, ey, ez, color="yellow", alpha=0.2)
 
         # メディウム描画（最初に1回だけ）
         if shape == "spot":
@@ -2110,7 +2110,7 @@ class SpermTrajectoryVisualizer:
                 ax.plot_surface(mx, my, mz, color='pink', alpha=0.05)
 
             # 卵子再描画
-            # ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.2)
+            ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.2)
 
             return lines
 
@@ -2226,7 +2226,7 @@ class SpermTrajectoryVisualizer:
         ex = egg_c[0] + egg_r * np.outer(np.cos(u), np.sin(v))
         ey = egg_c[1] + egg_r * np.outer(np.sin(u), np.sin(v))
         ez = egg_c[2] + egg_r * np.outer(np.ones_like(u), np.cos(v))
-        # ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.8)
+        ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.8)
 
         # 動画ファイル出力
         output_folder = MOV_DIR
@@ -2317,7 +2317,7 @@ class SpermTrajectoryVisualizer:
         ex = egg_center[0] + egg_radius * np.outer(np.cos(u), np.sin(v))
         ey = egg_center[1] + egg_radius * np.outer(np.sin(u), np.sin(v))
         ez = egg_center[2] + egg_radius * np.outer(np.ones_like(u), np.cos(v))
-        # ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.2)
+        ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.2)
 
         # 軌跡アニメーション
         lines = [ax.plot([], [], [], lw=1)[0] for _ in range(num_sperm)]
