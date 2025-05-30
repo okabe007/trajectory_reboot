@@ -39,6 +39,7 @@ def is_vector_meeting_egg(base_position: np.ndarray, temp_position: np.ndarray,
     distance_base = LA.norm(base_position - egg_center)
     distance_tip = LA.norm(temp_position - egg_center)
 
+    # 両端がともに卵子の外なら、ベクトル交差判定を実行
     if distance_base > gamete_R and distance_tip > gamete_R:
         f = base_position - egg_center
         d = temp_position - base_position
@@ -48,24 +49,11 @@ def is_vector_meeting_egg(base_position: np.ndarray, temp_position: np.ndarray,
         discriminant = b**2 - 4 * a * c
         return discriminant >= 0
     else:
+        # 端点のいずれかがすでに球内
         return True
 
 
-# ↓↓ 以下は IO_check_spot 関数に属するコードです。必ず別関数として書いてください。
 
-def IO_check_spot(base_position: np.ndarray, temp_position: np.ndarray, constants: dict, IO_status: str) -> str:
-    radius   = constants['radius']
-    bottom_z = constants['spot_bottom_height']
-    bottom_R = constants['spot_bottom_r']
-    limit    = constants['limit']
-
-    z_tip = temp_position[2]
-    xy_dist = np.sqrt(temp_position[0]**2 + temp_position[1]**2)
-
-    if z_tip > bottom_z + limit:
-        r_tip = LA.norm(temp_position)
-        if r_tip > radius + limit:
-            return "sphere_out"
         else:
             return "inside"
 
@@ -97,7 +85,6 @@ def IO_check_spot(base_position: np.ndarray, temp_position: np.ndarray, constant
                 return "spot_bottom"
 
     return "inside"
-
 
 
 def _make_local_basis(forward: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -447,7 +434,12 @@ class SpermSimulation:
         else:
             rng = np.random.default_rng()
 
-        self.trajectory = []
+        
+        egg_x, egg_y, egg_z, _ = _egg_position(self.constants)
+        egg_center = np.array([egg_x, egg_y, egg_z])
+        gamete_R = self.constants["gamete_r"]
+        intersection_records = []
+self.trajectory = []
         prev_states = ["inside" for _ in range(number_of_sperm)]
         bottom_modes = [False for _ in range(number_of_sperm)]
         stick_statuses = [0 for _ in range(number_of_sperm)]
@@ -474,6 +466,9 @@ class SpermSimulation:
                         vec /= np.linalg.norm(vec) + 1e-12
 
                     candidate = pos + vec * step_len
+
+                    if j > 0 and is_vector_meeting_egg(traj[-1], candidate, egg_center, gamete_R):
+                        intersection_records.append((i, j))
 
                     if shape == "drop":
                         base_pos = pos
@@ -773,3 +768,5 @@ class SpermSimulation:
         plt.close(fig)
         print(f"[INFO] 動画を保存しました: {save_path}")
         return save_path
+
+        return np.array(traj), intersection_records

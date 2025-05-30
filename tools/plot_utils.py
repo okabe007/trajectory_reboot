@@ -223,7 +223,7 @@ def draw_motion_area_3d(ax: plt.Axes, constants: dict) -> None:
 # =======================
 from tools.derived_constants import _egg_position
 
-def plot_3d_movie_trajectories(trajs: np.ndarray, constants: dict, save_path=None, show=True):
+def plot_3d_movie_trajectories(trajs: np.ndarray, constants: dict, save_path=None, show=True, intersection_records=None):
     """3D軌跡ムービーの作成（卵子とメディウムも毎フレーム描画）"""
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D

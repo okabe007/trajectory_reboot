@@ -29,43 +29,6 @@ def IO_check_spot(base_position: np.ndarray, temp_position: np.ndarray, constant
     if z_tip > bottom_z + limit:
         if r_tip > radius + limit:
             return "sphere_out"
-
-
-def is_vector_meeting_egg(base_position: np.ndarray, temp_position: np.ndarray,
-                          egg_center: np.ndarray, gamete_R: float) -> bool:
-    """
-    base_position から temp_position までの直線が卵子（球）と交差しているかを判定する。
-    """
-    distance_base = LA.norm(base_position - egg_center)
-    distance_tip = LA.norm(temp_position - egg_center)
-
-    if distance_base > gamete_R and distance_tip > gamete_R:
-        f = base_position - egg_center
-        d = temp_position - base_position
-        a = np.dot(d, d)
-        b = 2 * np.dot(f, d)
-        c = np.dot(f, f) - gamete_R**2
-        discriminant = b**2 - 4 * a * c
-        return discriminant >= 0
-    else:
-        return True
-
-
-# ↓↓ 以下は IO_check_spot 関数に属するコードです。必ず別関数として書いてください。
-
-def IO_check_spot(base_position: np.ndarray, temp_position: np.ndarray, constants: dict, IO_status: str) -> str:
-    radius   = constants['radius']
-    bottom_z = constants['spot_bottom_height']
-    bottom_R = constants['spot_bottom_r']
-    limit    = constants['limit']
-
-    z_tip = temp_position[2]
-    xy_dist = np.sqrt(temp_position[0]**2 + temp_position[1]**2)
-
-    if z_tip > bottom_z + limit:
-        r_tip = LA.norm(temp_position)
-        if r_tip > radius + limit:
-            return "sphere_out"
         else:
             return "inside"
 
@@ -97,7 +60,6 @@ def IO_check_spot(base_position: np.ndarray, temp_position: np.ndarray, constant
                 return "spot_bottom"
 
     return "inside"
-
 
 
 def _make_local_basis(forward: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
