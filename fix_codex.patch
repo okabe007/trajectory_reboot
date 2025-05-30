@@ -1,62 +1,73 @@
-diff --git a/tools/plot_utils.py b/tools/plot_utils.py
-index 8192b827d73a2c76c77f7ef750ac338faacd84cd..6f4dc72a1feccf2a3f352870eb0a1ec1d286ca56 100644
---- a/tools/plot_utils.py
-+++ b/tools/plot_utils.py
-@@ -89,53 +89,54 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
-     if max_sperm is None:
-         max_sperm = trajs.shape[0]
+diff --git a/core/simulation.py b/core/simulation.py
+index ae349002ab53ebd6f0f4ed819c7ad15465d4c89f..0f29df95f3585b3590177105f5f6b6838f16eb37 100644
+--- a/core/simulation.py
++++ b/core/simulation.py
+@@ -713,68 +713,25 @@ class SpermSimulation:
+         anim = FuncAnimation(fig, update, init_func=init, frames=n_frames, interval=1000 / fps, blit=False)
  
-     # 軌跡描画
-     for s in range(min(max_sperm, trajs.shape[0])):
-         axs[0].plot(trajs[s, :, 0], trajs[s, :, 1])  # XY
-         axs[1].plot(trajs[s, :, 0], trajs[s, :, 2])  # XZ
-         axs[2].plot(trajs[s, :, 1], trajs[s, :, 2])  # YZ
+         base_dir = os.path.dirname(__file__)
+         mov_dir = os.path.join(base_dir, "figs_and_movies")
+         os.makedirs(mov_dir, exist_ok=True)
+         if save_path is None:
+             dtstr = datetime.now().strftime("%Y%m%d_%H%M%S")
+             save_path = os.path.join(mov_dir, f"trajectory_{dtstr}.mp4")
+         else:
+             filename = os.path.basename(save_path)
+             save_path = os.path.join(mov_dir, filename)
  
-     # 背景（メディウム）描画
-     if shape == "drop":
-         medium_r = drop_r
-         center = (0.0, 0.0)
-         axs[0].add_patch(Circle(center, medium_r, color="pink", alpha=0.3))  # XY
-         axs[1].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XZ
-         axs[2].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # YZ
+         try:
+             anim.save(save_path, writer="ffmpeg", fps=fps)
+         except Exception as e:
+             print(f"[WARN] ffmpeg保存失敗 ({e}) → pillow writerで再試行")
+             try:
+                 anim.save(save_path, writer="pillow", fps=fps)
+             except Exception as e2:
+                 print(f"[ERROR] pillow writerでも保存に失敗: {e2}")
+                 return None
  
-     elif shape == "spot":
-         medium_r = spot_r
-         center_z = constants.get("spot_bottom_height", 0.0) + egg_r
-         axs[0].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XY
-         axs[1].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # XZ
-         axs[2].add_patch(Circle((0, center_z), medium_r, color="pink", alpha=0.3))  # YZ
- 
-     # 卵子描画（円）
--    axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, color="yellow", alpha=0.6))  # XY
--    axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, color="yellow", alpha=0.6))  # XZ
--    axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, color="yellow", alpha=0.6))  # YZ
-+    egg_kw = dict(color="yellow", alpha=0.6, edgecolor="lightgray", linewidth=0.5)
-+    axs[0].add_patch(Circle((egg_pos[0], egg_pos[1]), egg_r, **egg_kw))  # XY
-+    axs[1].add_patch(Circle((egg_pos[0], egg_pos[2]), egg_r, **egg_kw))  # XZ
-+    axs[2].add_patch(Circle((egg_pos[1], egg_pos[2]), egg_r, **egg_kw))  # YZ
- 
-     # 軸とアスペクト比
-     axs[0].set_title("XY")
-     axs[1].set_title("XZ")
-     axs[2].set_title("YZ")
- 
-     _set_common_2d_ax(axs[0], (x_min, x_max), (y_min, y_max), "X", "Y")
-     _set_common_2d_ax(axs[1], (x_min, x_max), (z_min, z_max), "X", "Z")
-     _set_common_2d_ax(axs[2], (y_min, y_max), (z_min, z_max), "Y", "Z")
- 
-     fig.tight_layout()
-     if save_path:
-         fig.savefig(save_path)
-     if show:
-         plt.show()
- 
- 
- # =======================
- # 🟨 3D用の補助描画関数
- # =======================
- def draw_egg_3d(ax: plt.Axes, constants: dict) -> None:
-     egg_x, egg_y, egg_z = _egg_position(constants)
-     r = constants.get("gamete_r", 0.15)
-     u = np.linspace(0, 2 * np.pi, 30)
-     v = np.linspace(0, np.pi, 30)
+         plt.close(fig)
+         print(f"[INFO] 動画を保存しました: {save_path}")
+         return save_path
+-    
+-
+-def plot_3d_movie_trajectories(trajs: np.ndarray, constants: dict, save_path=None, show=True):
+-    fig = plt.figure()
+-    ax = fig.add_subplot(111, projection='3d')
+-
+-    # === 定義されているべき派生定数 ===
+-    xlim = constants.get("xlim", [-1, 1])
+-    ylim = constants.get("ylim", [-1, 1])
+-    zlim = constants.get("zlim", [-1, 1])
+-    radius = constants.get("radius", 1.0)
+-    egg_r = constants.get("gamete_r", 0.05)
+-    egg_pos = _egg_position(constants)
+-
+-    def set_ax_3D(ax):
+-        ax.set_xlim(xlim)
+-        ax.set_ylim(ylim)
+-        ax.set_zlim(zlim)
+-        ax.set_xlabel("X")
+-        ax.set_ylabel("Y")
+-        ax.set_zlabel("Z")
+-        ax.set_title("3D Sperm Trajectories")
+-
+-    num_frames = trajs.shape[1]
+-    num_sperm = trajs.shape[0]
+-
+-    def update(frame):
+-        ax.cla()
+-        set_ax_3D(ax)
+-        draw_medium(ax, radius)
+-        # draw_egg(ax, egg_pos, egg_r)
+-        for s in range(num_sperm):
+-            ax.plot(trajs[s, :frame+1, 0],
+-                    trajs[s, :frame+1, 1],
+-                    trajs[s, :frame+1, 2],
+-                    lw=1)
+-
+-    ani = FuncAnimation(fig, update, frames=num_frames, interval=100)
+-
+-    if save_path:
+-        ani.save(save_path, writer='ffmpeg')
+-    if show:
+-        plt.show()
