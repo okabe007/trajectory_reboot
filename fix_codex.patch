@@ -1,114 +1,57 @@
 diff --git a/spermsim/main.py b/spermsim/main.py
-index 3f2f5b554118592903131f7f2b7dcffeef117afe..61f870d058a311622d84db4eaaddf9751ddf050b 100644
+index 3f2f5b554118592903131f7f2b7dcffeef117afe..8d273a508bacca1f8853668e5a7388e6c2c8e26b 100644
 --- a/spermsim/main.py
 +++ b/spermsim/main.py
-@@ -848,104 +848,106 @@ class SpermSimulation:
-         for j in range(self.number_of_sperm):
-             for i in range(self.number_of_steps):
-                 self.vec_thickness_2d[j, i] = 0.4
-                 self.vec_thickness_3d[j, i] = 1.5
- 
-     
-     def __init__(self, constants, visualizer, simulation_data):
- 
-         self.constants = constants  # ✅ 最初に設定
- 
-         self.number_of_sperm = self.constants["number_of_sperm"]
-         self.number_of_steps = self.constants["number_of_steps"]
- 
-         self.vec_thickness_2d = np.zeros((self.number_of_sperm, self.number_of_steps))
-         self.vec_thickness_3d = np.zeros((self.number_of_sperm, self.number_of_steps))
-         self.initialize_thickness()
- 
-         self.visualizer = visualizer
-         self.simulation = simulation_data
-         self.n_stop = self.constants.get('n_stop', 0)
- 
-         if constants.get('reflection_analysis', 'no') == "yes":
-             self.initial_stick = constants['initial_stick']
+@@ -1523,51 +1523,51 @@ class SpermTrajectoryVisualizer:
+         if shape == "ceros":
+             plt.ion()
+             fig, ax = plt.subplots(figsize=(10, 4))
+             ax.set_xlim(-0.815, 0.815)
+             ax.set_ylim(-0.62, 0.62)
+             ax.set_aspect('equal', adjustable='box')
+             ax.set_xlabel("X")
+             ax.set_ylabel("Y")
+             ax.set_title("CEROS 2D Animation (Zoomed)")
+             lines = [ax.plot([], [], lw=2)[0] for _ in range(num_sperm)]
+             def init():
+                 for line in lines:
+                     line.set_data([], [])
+                 return lines
+             def animate(i):
+                 if i % 10 == 0:
+                     percentage = (i / (n_sim - 1)) * 100
+                     print(f"Progress: {percentage:.2f}%")
+                 for j, line in enumerate(lines):
+                     base_pos = self.simulation.trajectory[j, i]
+                     end_pos  = self.simulation.trajectory[j, i + 1]
+                     xdata = [base_pos[0], end_pos[0]]
+                     ydata = [base_pos[1], end_pos[1]]
+                     line.set_data(xdata, ydata)
+                     line.set_color(self.simulation.vec_colors[j, i])
+-                    line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
++                    line.set_linewidth(self.simulation.vec_thickness_2d[j, i])
+                 return lines
+             anim = FuncAnimation(
+                 fig,
+                 animate,
+                 init_func=init,
+                 frames=n_sim - 1,
+                 interval=180,
+                 blit=False
+             )
+             output_folder = MOV_DIR                                             
+             os.makedirs(output_folder, exist_ok=True)
+             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+             mov_filename = f"sperm_simulation_ceros_{timestamp}.mp4"
+             output_path = os.path.join(output_folder, mov_filename)
+             _safe_anim_save(anim, output_path)                                        
+             print(f"{output_path}")
+             plt.show()
+             return output_path
          else:
-             self.initial_stick = 0
--        self.vec_colors = np.empty(self.number_of_sperm, dtype=object)
-+        # Colors and thickness for each vector segment
-+        self.vec_colors = np.empty((self.number_of_sperm, self.number_of_steps), dtype=object)
-         self.vec_thickness_2d = np.zeros((self.number_of_sperm, self.number_of_steps), dtype=float)
-         self.vec_thickness_3d = np.zeros((self.number_of_sperm, self.number_of_steps), dtype=float)
-         self.trajectory = np.zeros((self.number_of_sperm, self.number_of_steps, 3), dtype=float)
-         print(f"[DEBUG] self.trajectory.shape = {self.trajectory.shape}, dtype = {self.trajectory.dtype}")
- 
-         self.shape = create_shape(self.constants["shape"], self.constants)
- 
-         self.prev_IO_status = [None] * self.number_of_sperm
-         self.intersection_records = []
-         self.initialize_colors()
-         self.initialize_thickness()
-         for j in range(self.number_of_sperm):
-             base_position, temp_position = self.initial_vec(j, constants)
-             print(f"[DEBUG] base_position = {base_position}, type={type(base_position)}, shape={base_position.shape}")
-             print(f"[DEBUG] trajectory[j, 0] dtype: {self.trajectory[j, 0].dtype if hasattr(self.trajectory[j, 0], 'dtype') else 'N/A'}")
- 
-             self.trajectory[j, 0] = base_position
-             if self.number_of_steps > 1:
-                 self.trajectory[j, 1] = temp_position
-         print("初期化時のconstants:", constants)
-     def merge_contact_events(self):
-         """
-         接触イベント（(精子番号, ステップ番号)）をまとめて連続接触を1つに圧縮。
-         """
-         from collections import defaultdict
-         events_by_sperm = defaultdict(list)
-         for sperm_index, step in sorted(self.intersection_records, key=lambda x: (x[0], x[1])):
-             events_by_sperm[sperm_index].append(step)
-         merged_events = []
-         for sperm_index, steps in events_by_sperm.items():
-             if not steps:
-                 continue
-             start_step = steps[0]
-             end_step = steps[0]
-             for step in steps[1:]:
-                 if step == end_step + 1:
-                     end_step = step
-                 else:
-                     merged_events.append((sperm_index, start_step))
-                     start_step = step
-                     end_step = step
-             merged_events.append((sperm_index, start_step))
-         return merged_events
-     def initialize_colors(self):
-         base_colors = [
-             "#000000", "#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd", "#8c564b",
-             "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#aec7e8", "#ffbb78",
-             "#98df8a", "#c5b0d5", "#c49c94", "#f7b6d2", "#c7c7c7", "#dbdb8d",
-             "#9edae5", "#2f4f4f"
-         ]
--        self.vec_colors = np.empty(self.number_of_sperm, dtype=object)
-+        # Initialize color map for all segments of each sperm
-+        self.vec_colors = np.empty((self.number_of_sperm, self.number_of_steps), dtype=object)
-         for j in range(self.number_of_sperm):
--            self.vec_colors[j] = base_colors[j % len(base_colors)]
-+            self.vec_colors[j, :] = base_colors[j % len(base_colors)]
- 
-     
-     def initial_vec(self, j, constants):
-         shape = self.constants['shape']
-         analysis_type = self.constants.get('analysis_type', 'simulation')
- 
-         # --- unified base_position for all modes ---
-         base_position = self.shape.initial_position()
- 
-         if "number_of_sperm" not in self.constants:
-             volume = float(self.constants['volume'])
-             sperm_conc = float(self.constants['sperm_conc'])
-             self.constants['number_of_sperm'] = int(sperm_conc * volume / 1000)
- 
-         if "number_of_steps" not in self.constants:
-             sim_min = float(self.constants['sim_min'])
-             sample_rate = float(self.constants['sampl_rate_hz'])
-             steps = int(sim_min * 60 * sample_rate)
-             self.constants['number_of_steps'] = steps
- 
-    
-         if analysis_type == "reflection":
-             if shape == "spot":
-                 spot_bottom_r = self.constants.get('spot_bottom_r', 1.0)
-                 spot_bottom_height = self.constants.get('spot_bottom_height', 0.5)
+             plt.ion()
+             fig = plt.figure(figsize=(10, 4))
+             ax = fig.add_subplot(111, projection='3d')
+             merged_events = self.simulation.merge_contact_events()
+             contacts_count = len(merged_events)
+             if self.constants["sim_min"] > 0:
