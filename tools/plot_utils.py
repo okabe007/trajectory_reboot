@@ -63,12 +63,28 @@ def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel):
     ax.set_ylabel(ylabel)
     ax.set_aspect('equal', adjustable='box')  # ✅ 数値の増分 = 実長さに一致
 
-def draw_egg(ax, pos, radius):
-    u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
+def draw_egg(ax, pos, radius, *, color="yellow", alpha=0.6):
+    """Draw the egg as a sphere.
+
+    Parameters
+    ----------
+    ax : matplotlib axes
+        3D axes object to draw on.
+    pos : tuple[float, float, float]
+        (x, y, z) position of the egg centre.
+    radius : float
+        Radius of the egg.
+    color : str, optional
+        Surface colour (default ``"yellow"``).
+    alpha : float, optional
+        Surface transparency (default ``0.6``).
+    """
+
+    u, v = np.mgrid[0 : 2 * np.pi : 20j, 0 : np.pi : 10j]
     x = radius * np.cos(u) * np.sin(v) + pos[0]
     y = radius * np.sin(u) * np.sin(v) + pos[1]
     z = radius * np.cos(v) + pos[2]
-    ax.plot_surface(x, y, z, color='red', alpha=0.3, edgecolor='none')
+    ax.plot_surface(x, y, z, color=color, alpha=alpha, edgecolor="none")
 # =======================
 # 🟨 2D軌跡プロット
 # =======================
@@ -157,14 +173,11 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
 # 🟨 3D用の補助描画関数
 # =======================
 def draw_egg_3d(ax: plt.Axes, constants: dict) -> None:
-    egg_x, egg_y, egg_z = _egg_position(constants)
+    """Convenience wrapper for :func:`draw_egg` using ``constants``."""
+
+    egg_pos = _egg_position(constants)
     r = constants.get("gamete_r", 0.15)
-    u = np.linspace(0, 2 * np.pi, 30)
-    v = np.linspace(0, np.pi, 30)
-    x = egg_x + r * np.outer(np.cos(u), np.sin(v))
-    y = egg_y + r * np.outer(np.sin(u), np.sin(v))
-    z = egg_z + r * np.outer(np.ones_like(u), np.cos(v))
-    ax.plot_surface(x, y, z, color='yellow', alpha=0.6, edgecolor='none')
+    draw_egg(ax, egg_pos, r)
 
 
 def draw_motion_area_3d(ax: plt.Axes, constants: dict) -> None:
