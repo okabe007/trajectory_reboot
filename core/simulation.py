@@ -758,20 +758,6 @@ def plot_3d_movie_trajectories(trajs: np.ndarray, constants: dict, save_path=Non
         ax.set_zlabel("Z")
         ax.set_title("3D Sperm Trajectories")
 
-    # def draw_medium(ax, radius):
-    #     u, v = np.mgrid[0:2*np.pi:40j, 0:np.pi:20j]
-    #     x = radius * np.cos(u) * np.sin(v)
-    #     y = radius * np.sin(u) * np.sin(v)
-    #     z = radius * np.cos(v)
-    #     ax.plot_surface(x, y, z, color='pink', alpha=0.1, edgecolor='none')
-
-    # def draw_egg(ax, pos, radius):
-    #     u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
-    #     x = radius * np.cos(u) * np.sin(v) + pos[0]
-    #     y = radius * np.sin(u) * np.sin(v) + pos[1]
-    #     z = radius * np.cos(v) + pos[2]
-    #     ax.plot_surface(x, y, z, color='red', alpha=0.3, edgecolor='none')
-
     num_frames = trajs.shape[1]
     num_sperm = trajs.shape[0]
 

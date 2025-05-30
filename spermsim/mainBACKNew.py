@@ -1,32 +1,29 @@
-# === 標準ライブラリ ===
+import ast
+import configparser
 import os
+import random
+import sqlite3
 import sys
 import time
-import sqlite3
-import random
-import configparser
-import ast
 from datetime import datetime
 from enum import Enum
 
-# === サードパーティライブラリ ===
-import numpy as np
-import numpy.linalg as LA
-import pandas as pd
+# IO 状態を表す列挙型（独自定義または外部ファイルから）
+from io_status import IOStatus
+# from spermsim.CoreMovie import render_3d_movie
+# --- GUIライブラリ ---
+import tkinter as tk
+
+# --- 外部ライブラリ ---
 import matplotlib
 matplotlib.use("Agg")  # GUI 非依存の描画専用モード
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import matplotlib.patches as patches
+import numpy as np
+import numpy.linalg as LA
+import pandas as pd
 from tqdm import tqdm
-
-# # === GUI関連（必要であれば） ===
-# import tkinter as tk
-
-# === 自作モジュール ===
-from tools.derived_constants import get_limits
-from io_status import IOStatus
-# from spermsim.CoreMovie import render_3d_movie
 
 
 def rotation_matrix_from_vectors(vec1, vec2):
@@ -1626,22 +1623,65 @@ class SpermPlot:
         elif shape == 'cube':
             pass  # cube の場合は描画しない（必要なら後で追加）
 
-
-
 class SpermTrajectoryVisualizer:
     def __init__(self, simulation):
         self.simulation = simulation
-        self.constants = simulation.constants
-        self.egg_center = np.array([
-            self.constants.get("egg_x", 0.0),
-            self.constants.get("egg_y", 0.0),
-            self.constants.get("egg_z", 0.0),
-        ])
-        self.egg_radius = self.constants.get("gamete_r", 0.1)
+        self.constants = self.simulation.constants
+        self.sperm_plot = SpermPlot(self.simulation)
+        (
+            egg_x, egg_y, egg_z,
+            e_x_min, e_y_min, e_z_min,
+            e_x_max, e_y_max, e_z_max,
+            egg_center, egg_position_4d
+        ) = placement_of_eggs(self.constants)
+        self.egg_center = np.array([egg_x, egg_y, egg_z])
+        self.egg_radius = self.constants['gamete_r']
+    # def draw_egg(self, ax):
+    #     u = np.linspace(0, 2 * np.pi, 50)
+    #     v = np.linspace(0, np.pi, 50)
+    #     ex = self.egg_center[0] + self.egg_radius * np.outer(np.cos(u), np.sin(v))
+    #     ey = self.egg_center[1] + self.egg_radius * np.outer(np.sin(u), np.sin(v))
+    #     ez = self.egg_center[2] + self.egg_radius * np.outer(np.ones_like(u), np.cos(v))
+    #     ax.plot_surface(ex, ey, ez, color="yellow", alpha=0.2)
 
-    def _setup_3d_axes(self):
+    def draw_motion_area(self, ax):
+        shape = self.constants.get("shape", "spot")
+        if shape == "spot":
+            spot_R = self.constants.get("spot_r", 5.0)
+            spot_angle_deg = self.constants.get("spot_angle", 60)
+            theta_max = np.deg2rad(spot_angle_deg)
+            u = np.linspace(0, 2 * np.pi, 60)
+            v = np.linspace(0, theta_max, 60)
+            sx = spot_R * np.outer(np.sin(v), np.cos(u))
+            sy = spot_R * np.outer(np.sin(v), np.sin(u))
+            sz = spot_R * np.outer(np.cos(v), np.ones_like(u))
+            ax.plot_surface(sx, sy, sz, color='red', alpha=0.15)
+
+        elif shape == "drop":
+            drop_R = self.constants.get("drop_r", 5.0)
+            u = np.linspace(0, 2 * np.pi, 60)
+            v = np.linspace(0, np.pi, 60)
+            sx = drop_R * np.outer(np.sin(v), np.cos(u))
+            sy = drop_R * np.outer(np.sin(v), np.sin(u))
+            sz = drop_R * np.outer(np.cos(v), np.ones_like(u))
+            ax.plot_surface(sx, sy, sz, color='red', alpha=0.15)
+
+    def animate_trajectory(self):
+        if self.constants.get("make_movie", "no").lower() != "yes":
+            return None
+
+        from tools.derived_constants import get_limits
+        from matplotlib.animation import FuncAnimation
+
+        shape = self.constants.get("shape", "spot")
+        num_sperm = self.simulation.number_of_sperm
+        n_sim = self.simulation.number_of_steps
+
+        plt.ion()
         fig = plt.figure(figsize=(10, 6))
-        ax = fig.add_subplot(111, projection='3d')
+        ax = fig.add_subplot(111, projection="3d")
+
+        # 軸設定
         x_min, x_max, y_min, y_max, z_min, z_max = get_limits(self.constants)
         z_min = min(z_min, self.egg_center[2] - self.egg_radius)
         z_max = max(z_max, self.egg_center[2] + self.egg_radius)
@@ -1651,18 +1691,493 @@ class SpermTrajectoryVisualizer:
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
-        return fig, ax
 
-    def _compute_egg_surface(self):
-        u = np.linspace(0, 2 * np.pi, 50)
-        v = np.linspace(0, np.pi, 50)
-        ex = self.egg_center[0] + self.egg_radius * np.outer(np.cos(u), np.sin(v))
-        ey = self.egg_center[1] + self.egg_radius * np.outer(np.sin(u), np.sin(v))
-        ez = self.egg_center[2] + self.egg_radius * np.outer(np.ones_like(u), np.cos(v))
-        return ex, ey, ez
+        # ✅ 卵子とメディウムをここで1回だけ描画（Originと同じ構造）
+        # self.draw_egg(ax)
+        self.draw_motion_area(ax)
 
-    def _draw_medium(self, ax):
+        # 軌跡ラインの初期化
+        lines = [ax.plot([], [], [], lw=1)[0] for _ in range(num_sperm)]
+
+        def init():
+            for line in lines:
+                line.set_data([], [])
+                line.set_3d_properties([])
+            return lines
+
+        def animate(i):
+            for j, line in enumerate(lines):
+                base = self.simulation.trajectory[j, i]
+                end = self.simulation.trajectory[j, i + 1]
+                line.set_data([base[0], end[0]], [base[1], end[1]])
+                line.set_3d_properties([base[2], end[2]])
+                line.set_color(self.simulation.vec_colors[j, i])
+                line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
+            return lines
+
+        anim = FuncAnimation(
+            fig, animate, init_func=init,
+            frames=n_sim - 1, interval=180, blit=False
+        )
+
+        # 保存
+        output_folder = MOV_DIR
+        os.makedirs(output_folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        mov_filename = f"sperm_simulation_{shape}_{timestamp}.mp4"
+        output_path = os.path.join(output_folder, mov_filename)
+        anim.save(output_path, writer="ffmpeg", codec="mpeg4", fps=5)
+
+        print(f"[INFO] 動画を保存しました: {output_path}")
+
+        try:
+            fig.canvas.manager.window.attributes('-topmost', 1)
+        except Exception:
+            pass
+
+        plt.show()
+        return output_path
+
+        if self.constants.get("make_movie", "no").lower() != "yes":
+            return None
+
+        from tools.derived_constants import get_limits
+
         shape = self.constants.get("shape", "spot")
+        num_sperm = self.simulation.number_of_sperm
+        n_sim = self.simulation.number_of_steps
+
+        plt.ion()
+        fig = plt.figure(figsize=(10, 6))
+        ax = fig.add_subplot(111, projection="3d")
+
+        # 軸設定
+        x_min, x_max, y_min, y_max, z_min, z_max = get_limits(self.constants)
+        z_min = min(z_min, self.egg_center[2] - self.egg_radius)
+        z_max = max(z_max, self.egg_center[2] + self.egg_radius)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_zlim(z_min, z_max)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+
+        # 卵子描画（最初に1回だけ）
+        u_egg = np.linspace(0, 2 * np.pi, 50)
+        v_egg = np.linspace(0, np.pi, 50)
+        ex = self.egg_center[0] + self.egg_radius * np.outer(np.cos(u_egg), np.sin(v_egg))
+        ey = self.egg_center[1] + self.egg_radius * np.outer(np.sin(u_egg), np.sin(v_egg))
+        ez = self.egg_center[2] + self.egg_radius * np.outer(np.ones_like(u_egg), np.cos(v_egg))
+        # ax.plot_surface(ex, ey, ez, color="yellow", alpha=0.2)
+
+        # メディウム描画（最初に1回だけ）
+        if shape == "spot":
+            spot_R = self.constants.get("spot_r", 5.0)
+            spot_angle_deg = self.constants.get("spot_angle", 60)
+            theta_max_rad = np.deg2rad(spot_angle_deg)
+            shape_u = np.linspace(0, 2 * np.pi, 60)
+            shape_v = np.linspace(0, theta_max_rad, 60)
+            sx = spot_R * np.outer(np.sin(shape_v), np.cos(shape_u))
+            sy = spot_R * np.outer(np.sin(shape_v), np.sin(shape_u))
+            sz = spot_R * np.outer(np.cos(shape_v), np.ones_like(shape_u))
+            ax.plot_surface(sx, sy, sz, color="red", alpha=0.15)
+
+        elif shape == "drop":
+            drop_R = self.constants.get("drop_r", 5.0)
+            shape_u = np.linspace(0, 2 * np.pi, 60)
+            shape_v = np.linspace(0, np.pi, 60)
+            sx = drop_R * np.outer(np.sin(shape_v), np.cos(shape_u))
+            sy = drop_R * np.outer(np.sin(shape_v), np.sin(shape_u))
+            sz = drop_R * np.outer(np.cos(shape_v), np.ones_like(shape_u))
+            ax.plot_surface(sx, sy, sz, color="red", alpha=0.15)
+
+        # 軌跡ラインの初期化
+        lines = [ax.plot([], [], [], lw=2)[0] for _ in range(num_sperm)]
+
+        def init():
+            for line in lines:
+                line.set_data([], [])
+                line.set_3d_properties([])
+            return lines
+
+        def animate(i):
+            if i % 10 == 0:
+                percentage = (i / (n_sim - 1)) * 100
+                print(f"[DEBUG] Progress: {percentage:.2f}%")
+
+            for j, line in enumerate(lines):
+                base = self.simulation.trajectory[j, i]
+                end = self.simulation.trajectory[j, i + 1]
+                line.set_data([base[0], end[0]], [base[1], end[1]])
+                line.set_3d_properties([base[2], end[2]])
+                line.set_color(self.simulation.vec_colors[j, i])
+                line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
+            return lines
+
+        # アニメーション生成
+        from matplotlib.animation import FuncAnimation
+        anim = FuncAnimation(
+            fig,
+            animate,
+            init_func=init,
+            frames=n_sim - 1,
+            interval=180,
+            blit=False
+        )
+
+        # 保存処理
+        output_folder = MOV_DIR
+        os.makedirs(output_folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        mov_filename = f"sperm_simulation_{shape}_{timestamp}.mp4"
+        output_path = os.path.join(output_folder, mov_filename)
+        anim.save(output_path, writer="ffmpeg", codec="mpeg4", fps=5)
+
+        print(f"[INFO] 動画を保存しました: {output_path}")
+
+        # Mac対策：ウィンドウを前面に出す
+        try:
+            fig.canvas.manager.window.attributes("-topmost", 1)
+        except Exception:
+            pass
+
+        plt.show()
+        return output_path
+
+        if self.constants.get("make_movie", "no").lower() != "yes":
+            return None
+
+        from tools.derived_constants import get_limits
+
+        shape = self.constants.get("shape", "spot")
+        num_sperm = self.simulation.number_of_sperm
+        n_sim = self.simulation.number_of_steps
+
+        plt.ion()
+        fig = plt.figure(figsize=(10, 6))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # 軸スケール設定
+        x_min, x_max, y_min, y_max, z_min, z_max = get_limits(self.constants)
+        z_min = min(z_min, self.egg_center[2] - self.egg_radius)
+        z_max = max(z_max, self.egg_center[2] + self.egg_radius)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_zlim(z_min, z_max)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+
+        # 卵子座標
+        egg_r = self.egg_radius
+        egg_c = self.egg_center
+        u_egg = np.linspace(0, 2 * np.pi, 50)
+        v_egg = np.linspace(0, np.pi, 50)
+        ex = egg_c[0] + egg_r * np.outer(np.cos(u_egg), np.sin(v_egg))
+        ey = egg_c[1] + egg_r * np.outer(np.sin(u_egg), np.sin(v_egg))
+        ez = egg_c[2] + egg_r * np.outer(np.ones_like(u_egg), np.cos(v_egg))
+
+        # メディウム（spot）の座標
+        if shape == "spot":
+            spot_r = self.constants.get("spot_r", 1.0)
+            h = self.constants.get("spot_bottom_height", 0.0)
+            u = np.linspace(0, 2 * np.pi, 40)
+            v = np.linspace(0, np.pi / 2, 40)
+            mx = spot_r * np.outer(np.cos(u), np.sin(v))
+            my = spot_r * np.outer(np.sin(u), np.sin(v))
+            mz = spot_r * np.outer(np.ones_like(u), np.cos(v)) + h
+
+        # 軌跡ライン
+        lines = [ax.plot([], [], [], lw=1)[0] for _ in range(num_sperm)]
+
+        def init():
+            for line in lines:
+                line.set_data([], [])
+                line.set_3d_properties([])
+
+            # ✅ 卵子とメディウムを最初に一度だけ描画（描画維持される）
+            if shape == "spot":
+                init.medium = ax.plot_surface(mx, my, mz, color='pink', alpha=0.05)
+            init.egg = ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.2)
+
+            return lines
+
+        def animate(i):
+            for j, line in enumerate(lines):
+                base = self.simulation.trajectory[j, i]
+                end = self.simulation.trajectory[j, i + 1]
+                line.set_data([base[0], end[0]], [base[1], end[1]])
+                line.set_3d_properties([base[2], end[2]])
+                line.set_color(self.simulation.vec_colors[j, i])
+                line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
+            return lines
+
+        from matplotlib.animation import FuncAnimation
+        anim = FuncAnimation(
+            fig, animate, init_func=init,
+            frames=n_sim - 1, interval=180, blit=False
+        )
+
+        # 保存
+        output_folder = MOV_DIR
+        os.makedirs(output_folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        mov_filename = f"sperm_simulation_{shape}_{timestamp}.mp4"
+        output_path = os.path.join(output_folder, mov_filename)
+        _safe_anim_save(anim, output_path)
+        print(f"[INFO] 動画を保存しました: {output_path}")
+
+        # Mac対策
+        try:
+            fig.canvas.manager.window.attributes('-topmost', 1)
+        except Exception:
+            pass
+
+        plt.show()
+        return output_path
+
+        if self.constants.get("make_movie", "no").lower() != "yes":
+            return None
+
+        from tools.derived_constants import get_limits
+
+        shape = self.constants.get("shape", "spot")
+        num_sperm = self.simulation.number_of_sperm
+        n_sim = self.simulation.number_of_steps
+
+        plt.ion()
+        fig = plt.figure(figsize=(10, 6))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # 軸設定
+        x_min, x_max, y_min, y_max, z_min, z_max = get_limits(self.constants)
+        z_min = min(z_min, self.egg_center[2] - self.egg_radius)
+        z_max = max(z_max, self.egg_center[2] + self.egg_radius)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_zlim(z_min, z_max)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+
+        # 卵子描画座標
+        egg_r = self.egg_radius
+        egg_c = self.egg_center
+        u_egg = np.linspace(0, 2 * np.pi, 50)
+        v_egg = np.linspace(0, np.pi, 50)
+        ex = egg_c[0] + egg_r * np.outer(np.cos(u_egg), np.sin(v_egg))
+        ey = egg_c[1] + egg_r * np.outer(np.sin(u_egg), np.sin(v_egg))
+        ez = egg_c[2] + egg_r * np.outer(np.ones_like(u_egg), np.cos(v_egg))
+
+        # メディウム描画座標（spot用）
+        if shape == "spot":
+            spot_r = self.constants.get("spot_r", 1.0)
+            h = self.constants.get("spot_bottom_height", 0.0)
+            u = np.linspace(0, 2 * np.pi, 40)
+            v = np.linspace(0, np.pi / 2, 40)
+            mx = spot_r * np.outer(np.cos(u), np.sin(v))
+            my = spot_r * np.outer(np.sin(u), np.sin(v))
+            mz = spot_r * np.outer(np.ones_like(u), np.cos(v)) + h
+
+        # 軌跡ライン初期化
+        lines = [ax.plot([], [], [], lw=1)[0] for _ in range(num_sperm)]
+
+        def init():
+            for line in lines:
+                line.set_data([], [])
+                line.set_3d_properties([])
+            return lines
+
+        def animate(i):
+            # 軌跡更新
+            for j, line in enumerate(lines):
+                base = self.simulation.trajectory[j, i]
+                end = self.simulation.trajectory[j, i + 1]
+                line.set_data([base[0], end[0]], [base[1], end[1]])
+                line.set_3d_properties([base[2], end[2]])
+                line.set_color(self.simulation.vec_colors[j, i])
+                line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
+
+            # メディウム再描画（戻り値を保持）
+            if shape == "spot":
+                _ = ax.plot_surface(mx, my, mz, color='pink', alpha=0.05)
+
+            # 卵子再描画（戻り値を保持）
+            _ = ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.2)
+
+            return lines
+
+        from matplotlib.animation import FuncAnimation
+        anim = FuncAnimation(
+            fig, animate, init_func=init,
+            frames=n_sim - 1, interval=180, blit=False
+        )
+
+        # 動画保存
+        output_folder = MOV_DIR
+        os.makedirs(output_folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        mov_filename = f"sperm_simulation_{shape}_{timestamp}.mp4"
+        output_path = os.path.join(output_folder, mov_filename)
+        _safe_anim_save(anim, output_path)
+        print(f"[INFO] 動画を保存しました: {output_path}")
+
+        # Mac対応: ウィンドウを前面に出す
+        try:
+            fig.canvas.manager.window.attributes('-topmost', 1)
+        except Exception:
+            pass
+
+        plt.show()
+        return output_path
+
+        if self.constants.get("make_movie", "no").lower() != "yes":
+            return None
+
+        from tools.derived_constants import get_limits
+
+        shape = self.constants.get("shape", "spot")
+        num_sperm = self.simulation.number_of_sperm
+        n_sim = self.simulation.number_of_steps
+
+        plt.ion()
+        fig = plt.figure(figsize=(10, 6))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # 軸設定
+        x_min, x_max, y_min, y_max, z_min, z_max = get_limits(self.constants)
+        z_min = min(z_min, self.egg_center[2] - self.egg_radius)
+        z_max = max(z_max, self.egg_center[2] + self.egg_radius)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_zlim(z_min, z_max)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+
+        # 卵子描画座標（毎回使う）
+        egg_r = self.egg_radius
+        egg_c = self.egg_center
+        u_egg = np.linspace(0, 2 * np.pi, 50)
+        v_egg = np.linspace(0, np.pi, 50)
+        ex = egg_c[0] + egg_r * np.outer(np.cos(u_egg), np.sin(v_egg))
+        ey = egg_c[1] + egg_r * np.outer(np.sin(u_egg), np.sin(v_egg))
+        ez = egg_c[2] + egg_r * np.outer(np.ones_like(u_egg), np.cos(v_egg))
+
+        # メディウム描画座標（毎回使う）
+        if shape == "spot":
+            spot_r = self.constants.get("spot_r", 1.0)
+            h = self.constants.get("spot_bottom_height", 0.0)
+            u = np.linspace(0, 2 * np.pi, 40)
+            v = np.linspace(0, np.pi / 2, 40)
+            mx = spot_r * np.outer(np.cos(u), np.sin(v))
+            my = spot_r * np.outer(np.sin(u), np.sin(v))
+            mz = spot_r * np.outer(np.ones_like(u), np.cos(v)) + h
+
+        # 軌跡ライン初期化
+        lines = [ax.plot([], [], [], lw=1)[0] for _ in range(num_sperm)]
+
+        def init():
+            for line in lines:
+                line.set_data([], [])
+                line.set_3d_properties([])
+            return lines
+
+        def animate(i):
+            # 軌跡更新
+            for j, line in enumerate(lines):
+                base = self.simulation.trajectory[j, i]
+                end = self.simulation.trajectory[j, i + 1]
+                line.set_data([base[0], end[0]], [base[1], end[1]])
+                line.set_3d_properties([base[2], end[2]])
+                line.set_color(self.simulation.vec_colors[j, i])
+                line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
+
+            # メディウム再描画
+            if shape == "spot":
+                ax.plot_surface(mx, my, mz, color='pink', alpha=0.05)
+
+            # 卵子再描画
+            # ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.2)
+
+            return lines
+
+        from matplotlib.animation import FuncAnimation
+        anim = FuncAnimation(
+            fig, animate, init_func=init,
+            frames=n_sim - 1, interval=180, blit=False
+        )
+
+        # 動画保存
+        output_folder = MOV_DIR
+        os.makedirs(output_folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        mov_filename = f"sperm_simulation_{shape}_{timestamp}.mp4"
+        output_path = os.path.join(output_folder, mov_filename)
+        _safe_anim_save(anim, output_path)
+        print(f"[INFO] 動画を保存しました: {output_path}")
+
+        # Mac対応: 前面に出す
+        try:
+            fig.canvas.manager.window.attributes('-topmost', 1)
+        except Exception:
+            pass
+
+        plt.show()
+        return output_path
+
+        if self.constants.get("make_movie", "no").lower() != "yes":
+            return None
+
+        from tools.derived_constants import get_limits
+
+        shape = self.constants.get("shape", "spot")
+        num_sperm = self.simulation.number_of_sperm
+        n_sim = self.simulation.number_of_steps
+
+        plt.ion()
+        fig = plt.figure(figsize=(10, 6))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # 軸スケール設定
+        x_min, x_max, y_min, y_max, z_min, z_max = get_limits(self.constants)
+        z_min = min(z_min, self.egg_center[2] - self.egg_radius)
+        z_max = max(z_max, self.egg_center[2] + self.egg_radius)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_zlim(z_min, z_max)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+
+        # 軌跡ライン初期化
+        lines = [ax.plot([], [], [], lw=1)[0] for _ in range(num_sperm)]
+
+        def init():
+            for line in lines:
+                line.set_data([], [])
+                line.set_3d_properties([])
+            return lines
+
+        def animate(i):
+            for j, line in enumerate(lines):
+                base = self.simulation.trajectory[j, i]
+                end = self.simulation.trajectory[j, i + 1]
+                line.set_data([base[0], end[0]], [base[1], end[1]])
+                line.set_3d_properties([base[2], end[2]])
+                line.set_color(self.simulation.vec_colors[j, i])
+                line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
+            return lines
+
+        from matplotlib.animation import FuncAnimation
+        anim = FuncAnimation(
+            fig, animate, init_func=init,
+            frames=n_sim - 1, interval=180, blit=False
+        )
+
+        # === 軌跡の後にメディウムと卵子を描画 ===
+
+        # メディウムの描画（透明球など）
         if shape == "drop":
             r = self.constants["drop_r"]
             u = np.linspace(0, 2 * np.pi, 40)
@@ -1691,18 +2206,116 @@ class SpermTrajectoryVisualizer:
             z = spot_r * np.outer(np.ones_like(u), np.cos(v)) + h
             ax.plot_surface(x, y, z, color='pink', alpha=0.05)
 
-    def _init_lines(self, ax):
-        return [ax.plot([], [], [], lw=1)[0] for _ in range(self.simulation.number_of_sperm)]
+        # 卵子の描画（中心点と半透明球）
+        egg_r = self.egg_radius
+        egg_c = self.egg_center
+        u = np.linspace(0, 2 * np.pi, 50)
+        v = np.linspace(0, np.pi, 50)
+        ex = egg_c[0] + egg_r * np.outer(np.cos(u), np.sin(v))
+        ey = egg_c[1] + egg_r * np.outer(np.sin(u), np.sin(v))
+        ez = egg_c[2] + egg_r * np.outer(np.ones_like(u), np.cos(v))
+        # ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.8)
 
-    def _init_func(self, lines):
+        # 動画ファイル出力
+        output_folder = MOV_DIR
+        os.makedirs(output_folder, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        mov_filename = f"sperm_simulation_{shape}_{timestamp}.mp4"
+        output_path = os.path.join(output_folder, mov_filename)
+        _safe_anim_save(anim, output_path)
+        print(f"[INFO] 動画を保存しました: {output_path}")
+
+        # Macでウィンドウが裏に隠れないようにする
+        try:
+            fig.canvas.manager.window.attributes('-topmost', 1)
+        except Exception:
+            pass
+
+        plt.show()
+        return output_path
+
+        if self.constants.get("make_movie", "no").lower() != "yes":
+            return None
+
+        from tools.derived_constants import get_limits
+
+        shape = self.constants.get("shape", "spot")
+        num_sperm = self.simulation.number_of_sperm
+        n_sim = self.simulation.number_of_steps
+
+        plt.ion()
+        fig = plt.figure(figsize=(10, 6))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # 軸スケールを固定（派生変数から取得）
+        x_min, x_max, y_min, y_max, z_min, z_max = get_limits(self.constants)
+        print("[DEBUG] x range:", x_min, x_max)
+        print("[DEBUG] y range:", y_min, y_max)
+        print("[DEBUG] z range:", z_min, z_max)
+        print("[DEBUG] egg_center:", self.egg_center)
+        print("[DEBUG] egg_radius:", self.egg_radius)
+
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        ax.set_zlim(z_min, z_max)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+
+        # メディウム描画
+        if shape == "drop":
+            r = self.constants["drop_r"]
+            u = np.linspace(0, 2 * np.pi, 40)
+            v = np.linspace(0, np.pi, 40)
+            x = r * np.outer(np.cos(u), np.sin(v))
+            y = r * np.outer(np.sin(u), np.sin(v))
+            z = r * np.outer(np.ones_like(u), np.cos(v))
+            ax.plot_surface(x, y, z, color='pink', alpha=0.05)
+
+        elif shape == "cube":
+            edge = self.constants["edge_um"]
+            r = edge / 2
+            for s, e in zip([-r, r], [r, -r]):
+                ax.plot([s, s], [-r, r], [-r, -r], color='pink', alpha=0.3)
+                ax.plot([-r, r], [s, s], [-r, -r], color='pink', alpha=0.3)
+                ax.plot([-r, -r], [-r, r], [s, s], color='pink', alpha=0.3)
+                ax.plot([s, s], [-r, -r], [-r, r], color='pink', alpha=0.3)
+
+        elif shape == "spot":
+            # 底部円と外周球部分の簡易可視化（球冠）
+            spot_r = self.constants.get("spot_r", 1.0)
+            h = self.constants.get("spot_bottom_height", 0.0)
+            u = np.linspace(0, 2 * np.pi, 40)
+            v = np.linspace(0, np.pi / 2, 40)
+            x = spot_r * np.outer(np.cos(u), np.sin(v))
+            y = spot_r * np.outer(np.sin(u), np.sin(v))
+            z = spot_r * np.outer(np.ones_like(u), np.cos(v))
+            z += h
+            ax.plot_surface(x, y, z, color='pink', alpha=0.05)
+
+        # 卵子の描画
+        egg_center = np.array([
+            self.constants.get("egg_x", 0),
+            self.constants.get("egg_y", 0),
+            self.constants.get("egg_z", 0),
+        ])
+        egg_radius = self.constants.get("gamete_r", 0.1)
+        u = np.linspace(0, 2 * np.pi, 50)
+        v = np.linspace(0, np.pi, 50)
+        ex = egg_center[0] + egg_radius * np.outer(np.cos(u), np.sin(v))
+        ey = egg_center[1] + egg_radius * np.outer(np.sin(u), np.sin(v))
+        ez = egg_center[2] + egg_radius * np.outer(np.ones_like(u), np.cos(v))
+        # ax.plot_surface(ex, ey, ez, color='yellow', alpha=0.2)
+
+        # 軌跡アニメーション
+        lines = [ax.plot([], [], [], lw=1)[0] for _ in range(num_sperm)]
+
         def init():
             for line in lines:
                 line.set_data([], [])
                 line.set_3d_properties([])
             return lines
-        return init
 
-    def _animate_func(self, lines):
         def animate(i):
             for j, line in enumerate(lines):
                 base = self.simulation.trajectory[j, i]
@@ -1712,38 +2325,23 @@ class SpermTrajectoryVisualizer:
                 line.set_color(self.simulation.vec_colors[j, i])
                 line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
             return lines
-        return animate
 
-    def animate_trajectory(self):
-        if self.constants.get("make_movie", "no").lower() != "yes":
-            return None
-
-        fig, ax = self._setup_3d_axes()
-        self._draw_medium(ax)
-        ex, ey, ez = self._compute_egg_surface()
-        ax.plot_surface(
-            ex, ey, ez,
-            facecolors='yellow',     # 中の色
-            edgecolor='gray',        # 境界線の色
-            linewidth=0.5,           # 線の太さ
-            alpha=0.2                # 透明度
-        )
-
-        lines = self._init_lines(ax)
+        from matplotlib.animation import FuncAnimation
         anim = FuncAnimation(
-            fig, self._animate_func(lines), init_func=self._init_func(lines),
-            frames=self.simulation.number_of_steps - 1, interval=180, blit=False
+            fig, animate, init_func=init,
+            frames=n_sim - 1, interval=180, blit=False
         )
 
+        # 保存先処理
         output_folder = MOV_DIR
         os.makedirs(output_folder, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        mov_filename = f"sperm_simulation_{self.constants.get('shape', 'unknown')}_{timestamp}.mp4"
+        mov_filename = f"sperm_simulation_{shape}_{timestamp}.mp4"
         output_path = os.path.join(output_folder, mov_filename)
-        anim.save(output_path, writer="ffmpeg", codec="mpeg4", fps=5)
+        _safe_anim_save(anim, output_path)
+        print(f"保存完了: {output_path}")
 
-        print(f"[INFO] 動画を保存しました: {output_path}")
-
+        # Mac対策: ウィンドウを前面に出す
         try:
             fig.canvas.manager.window.attributes('-topmost', 1)
         except Exception:
@@ -1752,6 +2350,173 @@ class SpermTrajectoryVisualizer:
         plt.show()
         return output_path
 
+        if self.constants.get("make_movie", "no").lower() != "yes":
+            return None
+        shape = self.constants.get("shape", "spot")
+        num_sperm = self.simulation.number_of_sperm
+        n_sim = self.simulation.number_of_steps
+        if shape == "ceros":
+            plt.ion()
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.set_xlim(-0.815, 0.815)
+            ax.set_ylim(-0.62, 0.62)
+            ax.set_aspect('equal', adjustable='box')
+            ax.set_xlabel("X")
+            ax.set_ylabel("Y")
+            ax.set_title("CEROS 2D Animation (Zoomed)")
+            lines = [ax.plot([], [], lw=2)[0] for _ in range(num_sperm)]
+            def init():
+                for line in lines:
+                    line.set_data([], [])
+                return lines
+            def animate(i):
+                if i % 10 == 0:
+                    percentage = (i / (n_sim - 1)) * 100
+                    print(f"Progress: {percentage:.2f}%")
+                for j, line in enumerate(lines):
+                    base_pos = self.simulation.trajectory[j, i]
+                    end_pos  = self.simulation.trajectory[j, i + 1]
+                    xdata = [base_pos[0], end_pos[0]]
+                    ydata = [base_pos[1], end_pos[1]]
+                    line.set_data(xdata, ydata)
+                    line.set_color(self.simulation.vec_colors[j, i])
+                    line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
+                return lines
+            anim = FuncAnimation(
+                fig,
+                animate,
+                init_func=init,
+                frames=n_sim - 1,
+                interval=180,
+                blit=False
+            )
+            output_folder = MOV_DIR                                             
+            os.makedirs(output_folder, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            mov_filename = f"sperm_simulation_ceros_{timestamp}.mp4"
+            output_path = os.path.join(output_folder, mov_filename)
+            _safe_anim_save(anim, output_path)                                        
+            print(f"{output_path}")
+            plt.show()
+            return output_path
+        else:
+            plt.ion()
+            fig = plt.figure(figsize=(10, 4))
+            ax = fig.add_subplot(111, projection='3d')
+            merged_events = self.simulation.merge_contact_events()
+            contacts_count = len(merged_events)
+            if self.constants["sim_min"] > 0:
+                contacts_per_hour = contacts_count / (self.constants["sim_min"] / 60)
+            else:
+                contacts_per_hour = 0
+            title_str_3d = (
+                f"vol: {self.constants['volume']} μl, "
+                f"conc: {self.constants['sperm_conc']}/ml, "
+                f"vsl: {self.constants['vsl']} mm, "
+                f"sampling: {self.constants['sample_rate_hz']} Hz,\n"
+                f"dev: {self.constants['deviation']}, "
+                f"stick: {self.constants['stick_sec']} sec,\n"
+                f"sperm/egg interaction: {contacts_count} during {self.constants['sim_min']} min, "
+                f"egg: {self.constants['egg_localization']}, "
+            )
+            if shape == "spot":
+                title_str_3d += f"spot_angle: {self.constants.get('spot_angle', 'N/A')} degree"
+            fig.suptitle(title_str_3d, fontsize=8, y=0.93)
+            egg_u = np.linspace(0, 2 * np.pi, 50)
+            egg_v = np.linspace(0, np.pi, 50)
+            ex = (
+                self.egg_center[0]
+                + self.egg_radius * np.outer(np.cos(egg_u), np.sin(egg_v))
+            )
+            ey = (
+                self.egg_center[1]
+                + self.egg_radius * np.outer(np.sin(egg_u), np.sin(egg_v))
+            )
+            ez = (
+                self.egg_center[2]
+                + self.egg_radius * np.outer(
+                    np.ones(np.size(egg_u)), np.cos(egg_v)
+                )
+            )
+            vox_res = 20
+            if shape == "cube":
+                x_min, x_max = self.constants["x_min"], self.constants["x_max"]
+                y_min, y_max = self.constants["y_min"], self.constants["y_max"]
+                z_min, z_max = self.constants["z_min"], self.constants["z_max"]
+                X, Y, Z = np.mgrid[
+                    x_min:x_max:complex(0, vox_res),
+                    y_min:y_max:complex(0, vox_res),
+                    z_min:z_max:complex(0, vox_res),
+                ]
+                mask = np.ones(X.shape, dtype=bool)
+                ax.voxels(X, Y, Z, mask, facecolors="pink", edgecolor="none", alpha=0.15)
+            elif shape == "spot":
+                spot_r = self.constants.get("spot_r", 5)
+                bottom_h = self.constants.get("spot_bottom_height", 0)
+                X, Y, Z = np.mgrid[
+                    -spot_r:spot_r:complex(0, vox_res),
+                    -spot_r:spot_r:complex(0, vox_res),
+                    bottom_h:spot_r:complex(0, vox_res),
+                ]
+                mask = (X**2 + Y**2 + Z**2 <= spot_r**2) & (Z >= bottom_h)
+                ax.voxels(X, Y, Z, mask, facecolors="pink", edgecolor="none", alpha=0.15)
+            elif shape == "drop":
+                drop_r = self.constants["drop_r"]
+                X, Y, Z = np.mgrid[
+                    -drop_r:drop_r:complex(0, vox_res),
+                    -drop_r:drop_r:complex(0, vox_res),
+                    0:drop_r:complex(0, vox_res),
+                ]
+                mask = (X**2 + Y**2 + Z**2 <= drop_r**2) & (Z >= 0)
+                ax.voxels(X, Y, Z, mask, facecolors="pink", edgecolor="none", alpha=0.15)
+            ax.plot_surface(
+                ex,
+                ey,
+                ez,
+                color='yellow',
+                alpha=0.2,
+                edgecolor='gray',
+                linewidth=0.5,
+            )
+            lines = [ax.plot([], [], [], lw=2)[0] for _ in range(num_sperm)]
+            def init():
+                for line in lines:
+                    line.set_data([], [])
+                    line.set_3d_properties([])
+                return lines
+            def animate(i):
+                if i % 10 == 0:
+                    percentage = (i / (n_sim - 1)) * 100
+                    print(f"Progress: {percentage:.2f}%")
+                for j, line in enumerate(lines):
+                    base_pos = self.simulation.trajectory[j, i]
+                    end_pos = self.simulation.trajectory[j, i + 1]
+                    line.set_data(
+                        [base_pos[0], end_pos[0]],
+                        [base_pos[1], end_pos[1]]
+                    )
+                    line.set_3d_properties([base_pos[2], end_pos[2]])
+                    line.set_color(self.simulation.vec_colors[j, i])
+                    line.set_linewidth(self.simulation.vec_thickness_3d[j, i])
+                return lines
+            self.sperm_plot.set_ax_3D(ax)
+            anim = FuncAnimation(
+                fig,
+                animate,
+                init_func=init,
+                frames=n_sim - 1,
+                interval=180,
+                blit=False
+            )
+            output_folder = MOV_DIR                                             
+            os.makedirs(output_folder, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            mov_filename = f"sperm_simulation_{timestamp}.mp4"
+            output_path = os.path.join(output_folder, mov_filename)
+            _safe_anim_save(anim, output_path)                                        
+            print(f"{output_path}")
+            plt.show()
+            return output_path
 def setup_database(conn):
     """
     Create required tables if they do not exist.

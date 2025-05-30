@@ -50,37 +50,3 @@ def render_3d_movie(trajs: np.ndarray, constants: dict, save_path=None, show=Tru
     elif show:
         plt.show()
 
-# def draw_medium(ax, constants: dict):
-#     shape = constants.get("shape", "cube").lower()
-
-#     if shape == "spot":
-#         R = constants.get("spot_r", 1.0)
-#         z_base = constants.get("spot_bottom_height", 0.0)
-
-#         # θ: 球の上部からの角度範囲を計算（z_base以上）
-#         cos_theta_min = z_base / R
-#         theta_min = np.arccos(np.clip(cos_theta_min, -1.0, 1.0))  # θ ∈ [0, π]
-#         theta = np.linspace(0, theta_min, 30)
-#         phi = np.linspace(0, 2 * np.pi, 30)
-#         theta, phi = np.meshgrid(theta, phi)
-
-#         x = R * np.sin(theta) * np.cos(phi)
-#         y = R * np.sin(theta) * np.sin(phi)
-#         z = R * np.cos(theta)
-#         ax.plot_surface(x, y, z, color="pink", alpha=0.1, edgecolor="none")
-
-#     else:
-#         # 通常の球体（drop や cube など）
-#         R = constants.get("radius", 1.0)
-#         u, v = np.mgrid[0:2*np.pi:40j, 0:np.pi:20j]
-#         x = R * np.cos(u) * np.sin(v)
-#         y = R * np.sin(u) * np.sin(v)
-#         z = R * np.cos(v)
-#         ax.plot_surface(x, y, z, color='pink', alpha=0.1, edgecolor='none')
-
-# def draw_egg(ax, pos, radius):
-#     u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
-#     x = radius * np.cos(u) * np.sin(v) + pos[0]
-#     y = radius * np.sin(u) * np.sin(v) + pos[1]
-#     z = radius * np.cos(v) + pos[2]
-#     ax.plot_surface(x, y, z, color='red', alpha=0.3, edgecolor='none')
