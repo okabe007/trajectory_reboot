@@ -1,41 +1,50 @@
-diff --git a/tests/test_constants_conversion.py b/tests/test_constants_conversion.py
-index c169c0fcbec4fc70024972bb8698498350f9f46c..014b20fcfcc087e6fa5327d883181a1a7e824f14 100644
---- a/tests/test_constants_conversion.py
-+++ b/tests/test_constants_conversion.py
-@@ -1,24 +1,36 @@
- import math
- import sys
- from pathlib import Path
- sys.path.append(str(Path(__file__).resolve().parents[1]))
+diff --git a/tools/derived_constants.py b/tools/derived_constants.py
+index fe1b703762467cf5892e30295a506b82af68d8ca..6b7d461746d9f0e49d10ec7c4c13190c43a63cb8 100644
+--- a/tools/derived_constants.py
++++ b/tools/derived_constants.py
+@@ -23,36 +23,45 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
+         r_raw = float(constants["drop_r"])
+         constants["drop_r"] = r_raw / 1_000.0 if r_raw > 10 else r_raw
+         constants.setdefault("radius", constants["drop_r"])
  
- from tools.derived_constants import calculate_derived_constants
+     if "spot_r" in constants:
+         r_raw = float(constants["spot_r"])
+         constants["spot_r"] = r_raw / 1_000.0 if r_raw > 10 else r_raw
+         constants.setdefault("radius", constants["spot_r"])
  
+     if "spot_bottom_height" in constants:
+         b_raw = float(constants["spot_bottom_height"])
+         constants["spot_bottom_height"] = b_raw / 1_000.0 if b_raw > 10 else b_raw
  
- def test_gamete_r_conversion():
-     constants = {
-         "shape": "cube",
-         "vol": 1.0,
-         "gamete_r": 40.0,  # µm
-         "vsl": 0.1,
-         "sampl_rate_hz": 1.0,
-     }
-     result = calculate_derived_constants(constants)
-     assert math.isclose(result["gamete_r"], 0.04, rel_tol=1e-12)
+     if "spot_bottom_r" in constants:
+         br_raw = float(constants["spot_bottom_r"])
+         constants["spot_bottom_r"] = br_raw / 1_000.0 if br_raw > 10 else br_raw
  
+     # ---------- 共通パラメータ ------------------------------------------
+     constants.update(
+         vsl=vsl,
+         step_length=vsl / hz if hz else 0.0,
+         limit=1e-9,
+         gamete_r=gamete_r,
+     )
  
- def test_drop_r_conversion():
-     constants = {"shape": "drop", "drop_r": 500}
-     result = calculate_derived_constants(constants)
-     assert math.isclose(result["drop_r"], 0.5, rel_tol=1e-12)
++    # number_of_sperm を濃度と体積から計算（µL→mL 換算）
++    if "vol" in constants and "sperm_conc" in constants:
++        try:
++            vol_ul = float(constants["vol"])
++            conc = float(constants["sperm_conc"])
++            constants["number_of_sperm"] = int(conc * vol_ul / 1000)
++        except Exception:
++            pass
 +
-+
-+def test_number_of_sperm_calculation():
-+    constants = {
-+        "shape": "cube",
-+        "vol": 2.0,          # µL
-+        "sperm_conc": 1000.0,  # cells/mL
-+        "vsl": 0.1,
-+        "sampl_rate_hz": 1.0,
-+    }
-+    result = calculate_derived_constants(constants)
-+    assert result["number_of_sperm"] == 2
+     return constants
+ 
+ 
+ # ------------------------------------------------------------
+ # plot_utils.py 用の軽量ヘルパー --------------------------------
+ # ------------------------------------------------------------
+ def get_limits(constants: Dict[str, float]) -> Tuple[float, float, float, float, float, float]:
+     """x/y/z 各軸の min・max（mm）を tuple で返す"""
+     return (constants["x_min"], constants["x_max"],
+             constants["y_min"], constants["y_max"],
+             constants["z_min"], constants["z_max"])

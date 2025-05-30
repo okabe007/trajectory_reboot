@@ -45,6 +45,15 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
         gamete_r=gamete_r,
     )
 
+    # number_of_sperm を濃度と体積から計算（µL→mL 換算）
+    if "vol" in constants and "sperm_conc" in constants:
+        try:
+            vol_ul = float(constants["vol"])
+            conc = float(constants["sperm_conc"])
+            constants["number_of_sperm"] = int(conc * vol_ul / 1000)
+        except Exception:
+            pass
+
     return constants
 
 def _egg_position(constants: dict) -> list[float]:
