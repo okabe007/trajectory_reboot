@@ -1,50 +1,114 @@
-diff --git a/tools/derived_constants.py b/tools/derived_constants.py
-index fe1b703762467cf5892e30295a506b82af68d8ca..6b7d461746d9f0e49d10ec7c4c13190c43a63cb8 100644
---- a/tools/derived_constants.py
-+++ b/tools/derived_constants.py
-@@ -23,36 +23,45 @@ def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]
-         r_raw = float(constants["drop_r"])
-         constants["drop_r"] = r_raw / 1_000.0 if r_raw > 10 else r_raw
-         constants.setdefault("radius", constants["drop_r"])
+diff --git a/spermsim/main.py b/spermsim/main.py
+index 3f2f5b554118592903131f7f2b7dcffeef117afe..61f870d058a311622d84db4eaaddf9751ddf050b 100644
+--- a/spermsim/main.py
++++ b/spermsim/main.py
+@@ -848,104 +848,106 @@ class SpermSimulation:
+         for j in range(self.number_of_sperm):
+             for i in range(self.number_of_steps):
+                 self.vec_thickness_2d[j, i] = 0.4
+                 self.vec_thickness_3d[j, i] = 1.5
  
-     if "spot_r" in constants:
-         r_raw = float(constants["spot_r"])
-         constants["spot_r"] = r_raw / 1_000.0 if r_raw > 10 else r_raw
-         constants.setdefault("radius", constants["spot_r"])
+     
+     def __init__(self, constants, visualizer, simulation_data):
  
-     if "spot_bottom_height" in constants:
-         b_raw = float(constants["spot_bottom_height"])
-         constants["spot_bottom_height"] = b_raw / 1_000.0 if b_raw > 10 else b_raw
+         self.constants = constants  # ✅ 最初に設定
  
-     if "spot_bottom_r" in constants:
-         br_raw = float(constants["spot_bottom_r"])
-         constants["spot_bottom_r"] = br_raw / 1_000.0 if br_raw > 10 else br_raw
+         self.number_of_sperm = self.constants["number_of_sperm"]
+         self.number_of_steps = self.constants["number_of_steps"]
  
-     # ---------- 共通パラメータ ------------------------------------------
-     constants.update(
-         vsl=vsl,
-         step_length=vsl / hz if hz else 0.0,
-         limit=1e-9,
-         gamete_r=gamete_r,
-     )
+         self.vec_thickness_2d = np.zeros((self.number_of_sperm, self.number_of_steps))
+         self.vec_thickness_3d = np.zeros((self.number_of_sperm, self.number_of_steps))
+         self.initialize_thickness()
  
-+    # number_of_sperm を濃度と体積から計算（µL→mL 換算）
-+    if "vol" in constants and "sperm_conc" in constants:
-+        try:
-+            vol_ul = float(constants["vol"])
-+            conc = float(constants["sperm_conc"])
-+            constants["number_of_sperm"] = int(conc * vol_ul / 1000)
-+        except Exception:
-+            pass
-+
-     return constants
+         self.visualizer = visualizer
+         self.simulation = simulation_data
+         self.n_stop = self.constants.get('n_stop', 0)
  
+         if constants.get('reflection_analysis', 'no') == "yes":
+             self.initial_stick = constants['initial_stick']
+         else:
+             self.initial_stick = 0
+-        self.vec_colors = np.empty(self.number_of_sperm, dtype=object)
++        # Colors and thickness for each vector segment
++        self.vec_colors = np.empty((self.number_of_sperm, self.number_of_steps), dtype=object)
+         self.vec_thickness_2d = np.zeros((self.number_of_sperm, self.number_of_steps), dtype=float)
+         self.vec_thickness_3d = np.zeros((self.number_of_sperm, self.number_of_steps), dtype=float)
+         self.trajectory = np.zeros((self.number_of_sperm, self.number_of_steps, 3), dtype=float)
+         print(f"[DEBUG] self.trajectory.shape = {self.trajectory.shape}, dtype = {self.trajectory.dtype}")
  
- # ------------------------------------------------------------
- # plot_utils.py 用の軽量ヘルパー --------------------------------
- # ------------------------------------------------------------
- def get_limits(constants: Dict[str, float]) -> Tuple[float, float, float, float, float, float]:
-     """x/y/z 各軸の min・max（mm）を tuple で返す"""
-     return (constants["x_min"], constants["x_max"],
-             constants["y_min"], constants["y_max"],
-             constants["z_min"], constants["z_max"])
+         self.shape = create_shape(self.constants["shape"], self.constants)
+ 
+         self.prev_IO_status = [None] * self.number_of_sperm
+         self.intersection_records = []
+         self.initialize_colors()
+         self.initialize_thickness()
+         for j in range(self.number_of_sperm):
+             base_position, temp_position = self.initial_vec(j, constants)
+             print(f"[DEBUG] base_position = {base_position}, type={type(base_position)}, shape={base_position.shape}")
+             print(f"[DEBUG] trajectory[j, 0] dtype: {self.trajectory[j, 0].dtype if hasattr(self.trajectory[j, 0], 'dtype') else 'N/A'}")
+ 
+             self.trajectory[j, 0] = base_position
+             if self.number_of_steps > 1:
+                 self.trajectory[j, 1] = temp_position
+         print("初期化時のconstants:", constants)
+     def merge_contact_events(self):
+         """
+         接触イベント（(精子番号, ステップ番号)）をまとめて連続接触を1つに圧縮。
+         """
+         from collections import defaultdict
+         events_by_sperm = defaultdict(list)
+         for sperm_index, step in sorted(self.intersection_records, key=lambda x: (x[0], x[1])):
+             events_by_sperm[sperm_index].append(step)
+         merged_events = []
+         for sperm_index, steps in events_by_sperm.items():
+             if not steps:
+                 continue
+             start_step = steps[0]
+             end_step = steps[0]
+             for step in steps[1:]:
+                 if step == end_step + 1:
+                     end_step = step
+                 else:
+                     merged_events.append((sperm_index, start_step))
+                     start_step = step
+                     end_step = step
+             merged_events.append((sperm_index, start_step))
+         return merged_events
+     def initialize_colors(self):
+         base_colors = [
+             "#000000", "#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd", "#8c564b",
+             "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#aec7e8", "#ffbb78",
+             "#98df8a", "#c5b0d5", "#c49c94", "#f7b6d2", "#c7c7c7", "#dbdb8d",
+             "#9edae5", "#2f4f4f"
+         ]
+-        self.vec_colors = np.empty(self.number_of_sperm, dtype=object)
++        # Initialize color map for all segments of each sperm
++        self.vec_colors = np.empty((self.number_of_sperm, self.number_of_steps), dtype=object)
+         for j in range(self.number_of_sperm):
+-            self.vec_colors[j] = base_colors[j % len(base_colors)]
++            self.vec_colors[j, :] = base_colors[j % len(base_colors)]
+ 
+     
+     def initial_vec(self, j, constants):
+         shape = self.constants['shape']
+         analysis_type = self.constants.get('analysis_type', 'simulation')
+ 
+         # --- unified base_position for all modes ---
+         base_position = self.shape.initial_position()
+ 
+         if "number_of_sperm" not in self.constants:
+             volume = float(self.constants['volume'])
+             sperm_conc = float(self.constants['sperm_conc'])
+             self.constants['number_of_sperm'] = int(sperm_conc * volume / 1000)
+ 
+         if "number_of_steps" not in self.constants:
+             sim_min = float(self.constants['sim_min'])
+             sample_rate = float(self.constants['sampl_rate_hz'])
+             steps = int(sim_min * 60 * sample_rate)
+             self.constants['number_of_steps'] = steps
+ 
+    
+         if analysis_type == "reflection":
+             if shape == "spot":
+                 spot_bottom_r = self.constants.get('spot_bottom_r', 1.0)
+                 spot_bottom_height = self.constants.get('spot_bottom_height', 0.5)

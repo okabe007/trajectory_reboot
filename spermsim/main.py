@@ -961,7 +961,8 @@ class SpermSimulation:
             self.initial_stick = constants['initial_stick']
         else:
             self.initial_stick = 0
-        self.vec_colors = np.empty(self.number_of_sperm, dtype=object)
+        # Colors and thickness for each vector segment
+        self.vec_colors = np.empty((self.number_of_sperm, self.number_of_steps), dtype=object)
         self.vec_thickness_2d = np.zeros((self.number_of_sperm, self.number_of_steps), dtype=float)
         self.vec_thickness_3d = np.zeros((self.number_of_sperm, self.number_of_steps), dtype=float)
         self.trajectory = np.zeros((self.number_of_sperm, self.number_of_steps, 3), dtype=float)
@@ -1012,9 +1013,10 @@ class SpermSimulation:
             "#98df8a", "#c5b0d5", "#c49c94", "#f7b6d2", "#c7c7c7", "#dbdb8d",
             "#9edae5", "#2f4f4f"
         ]
-        self.vec_colors = np.empty(self.number_of_sperm, dtype=object)
+        # Initialize color map for all segments of each sperm
+        self.vec_colors = np.empty((self.number_of_sperm, self.number_of_steps), dtype=object)
         for j in range(self.number_of_sperm):
-            self.vec_colors[j] = base_colors[j % len(base_colors)]
+            self.vec_colors[j, :] = base_colors[j % len(base_colors)]
 
     
     def initial_vec(self, j, constants):
