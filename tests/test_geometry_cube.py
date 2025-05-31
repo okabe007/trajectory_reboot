@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from core.geometry import CubeShape
+from tools.geometry import CubeShape
 
 
 def test_edge_length_basic():

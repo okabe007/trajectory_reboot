@@ -19,13 +19,15 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import matplotlib.patches as patches
 from tqdm import tqdm
-
+from typing import Tuple
 # # === GUI関連（必要であれば） ===
 # import tkinter as tk
 
 # === 自作モジュール ===
 from tools.derived_constants import get_limits
 from io_status import IOStatus
+from core.simulation_core import SpermSimulation
+
 # from spermsim.CoreMovie import render_3d_movie
 
 
@@ -790,97 +792,130 @@ def prepare_new_vector(last_vec, constants,
     return new_vec
 #########
 
-def IO_check_cube(temp_position, constants):
-    x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
-    def classify_dimension(pos, min_val, max_val, constants):
-        if pos < min_val - constants['limit']:
-            return IOStatus.OUTSIDE
-        elif pos > max_val + constants['limit']:
-            return IOStatus.OUTSIDE
-        elif abs(pos - min_val) <= constants['limit'] or abs(pos - max_val) <= constants['limit']:
-            return IOStatus.SURFACE
-        else:
-            return IOStatus.INSIDE
-    x_class = classify_dimension(temp_position[0], x_min, x_max, constants)
-    y_class = classify_dimension(temp_position[1], y_min, y_max, constants)
-    z_class = classify_dimension(temp_position[2], z_min, z_max, constants)
-    classifications = [x_class, y_class, z_class]
-    inside_count  = classifications.count(IOStatus.INSIDE)
-    surface_count = classifications.count(IOStatus.SURFACE)
-    outside_count = classifications.count(IOStatus.OUTSIDE)
+# def IO_check_cube(temp_position, constants):
+#     x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
+#     def classify_dimension(pos, min_val, max_val, constants):
+#         if pos < min_val - constants['limit']:
+#             return IOStatus.OUTSIDE
+#         elif pos > max_val + constants['limit']:
+#             return IOStatus.OUTSIDE
+#         elif abs(pos - min_val) <= constants['limit'] or abs(pos - max_val) <= constants['limit']:
+#             return IOStatus.SURFACE
+#         else:
+#             return IOStatus.INSIDE
+#     x_class = classify_dimension(temp_position[0], x_min, x_max, constants)
+#     y_class = classify_dimension(temp_position[1], y_min, y_max, constants)
+#     z_class = classify_dimension(temp_position[2], z_min, z_max, constants)
+#     classifications = [x_class, y_class, z_class]
+#     inside_count  = classifications.count(IOStatus.INSIDE)
+#     surface_count = classifications.count(IOStatus.SURFACE)
+#     outside_count = classifications.count(IOStatus.OUTSIDE)
 
-    if inside_count == 3:
-        return IOStatus.INSIDE, None
-    elif inside_count == 2 and surface_count == 1:
-        return IOStatus.TEMP_ON_SURFACE, None
-    elif inside_count == 1 and surface_count == 2:
-        return IOStatus.TEMP_ON_EDGE, None
-    elif inside_count == 2 and outside_count == 1:
-        return IOStatus.SURFACE_OUT, None
-    elif inside_count == 1 and outside_count == 2:
-        return IOStatus.SURFACE_OUT, None
-    elif inside_count == 0 and surface_count == 2 and outside_count == 1:
-        vx, vy, vz = None, None, None
-        x, y, z = temp_position
-        if x_class == IOStatus.SURFACE:
-            if abs(x - x_min) <= constants['limit']:
-                vx = x_min
-            else:
-                vx = x_max
-        elif x_class == IOStatus.OUTSIDE:
-            if x < x_min - constants['limit']:
-                vx = x_min
-            else:
-                vx = x_max
-        if y_class == IOStatus.SURFACE:
-            if abs(y - y_min) <= constants['limit']:
-                vy = y_min
-            else:
-                vy = y_max
-        elif y_class == IOStatus.OUTSIDE:
-            if y < y_min - constants['limit']:
-                vy = y_min
-            else:
-                vy = y_max
-        if z_class == IOStatus.SURFACE:
-            if abs(z - z_min) <= constants['limit']:
-                vz = z_min
-            else:
-                vz = z_max
-        elif z_class == IOStatus.OUTSIDE:
-            if z < z_min - constants['limit']:
-                vz = z_min
-            else:
-                vz = z_max
-        vertex_coords = np.array([vx, vy, vz], dtype=float)
-        return IOStatus.VERTEX_OUT, vertex_coords
-    elif (
-        (inside_count == 1 and surface_count == 1 and outside_count == 1) or
-        (inside_count == 0 and surface_count == 1 and outside_count == 2)
-    ):
-        return IOStatus.EDGE_OUT, None
-    elif inside_count == 0 and surface_count == 0 and outside_count == 3:
-        return IOStatus.SURFACE_OUT, None
-    elif inside_count == 0 and surface_count == 3 and outside_count == 0:
-        return IOStatus.BORDER, None
-    else:
-        raise ValueError("Unknown inside/surface/outside combination")
-def IO_check_drop(temp_position, stick_status, constants):
-    if stick_status >= 1:
-        return IOStatus.POLYGON_MODE
+#     if inside_count == 3:
+#         return IOStatus.INSIDE, None
+#     elif inside_count == 2 and surface_count == 1:
+#         return IOStatus.TEMP_ON_SURFACE, None
+#     elif inside_count == 1 and surface_count == 2:
+#         return IOStatus.TEMP_ON_EDGE, None
+#     elif inside_count == 2 and outside_count == 1:
+#         return IOStatus.SURFACE_OUT, None
+#     elif inside_count == 1 and outside_count == 2:
+#         return IOStatus.SURFACE_OUT, None
+#     elif inside_count == 0 and surface_count == 2 and outside_count == 1:
+#         vx, vy, vz = None, None, None
+#         x, y, z = temp_position
+#         if x_class == IOStatus.SURFACE:
+#             if abs(x - x_min) <= constants['limit']:
+#                 vx = x_min
+#             else:
+#                 vx = x_max
+#         elif x_class == IOStatus.OUTSIDE:
+#             if x < x_min - constants['limit']:
+#                 vx = x_min
+#             else:
+#                 vx = x_max
+#         if y_class == IOStatus.SURFACE:
+#             if abs(y - y_min) <= constants['limit']:
+#                 vy = y_min
+#             else:
+#                 vy = y_max
+#         elif y_class == IOStatus.OUTSIDE:
+#             if y < y_min - constants['limit']:
+#                 vy = y_min
+#             else:
+#                 vy = y_max
+#         if z_class == IOStatus.SURFACE:
+#             if abs(z - z_min) <= constants['limit']:
+#                 vz = z_min
+#             else:
+#                 vz = z_max
+#         elif z_class == IOStatus.OUTSIDE:
+#             if z < z_min - constants['limit']:
+#                 vz = z_min
+#             else:
+#                 vz = z_max
+#         vertex_coords = np.array([vx, vy, vz], dtype=float)
+#         return IOStatus.VERTEX_OUT, vertex_coords
+#     elif (
+#         (inside_count == 1 and surface_count == 1 and outside_count == 1) or
+#         (inside_count == 0 and surface_count == 1 and outside_count == 2)
+#     ):
+#         return IOStatus.EDGE_OUT, None
+#     elif inside_count == 0 and surface_count == 0 and outside_count == 3:
+#         return IOStatus.SURFACE_OUT, None
+#     elif inside_count == 0 and surface_count == 3 and outside_count == 0:
+#         return IOStatus.BORDER, None
+#     else:
+#         raise ValueError("Unknown inside/surface/outside combination")
 
-    distance_from_center = LA.norm(temp_position)
-    radius = constants['drop_r']
+# def IO_check_drop(
+#     temp_position: np.ndarray,
+#     stick_status: float,
+#     constants: dict
+# ) -> Tuple["IOStatus", float]:
+#     """
+#     Drop型空間におけるIO判定および吸着状態の管理。
 
-    if distance_from_center > radius + constants['limit']:
-        IO_status = IOStatus.SPHERE_OUT
-    elif distance_from_center < radius - constants['limit']:
-        IO_status = IOStatus.INSIDE
-    else:
-        IO_status = IOStatus.BORDER
+#     Parameters:
+#         temp_position : np.ndarray (3,) - 精子先端の現在位置
+#         stick_status  : float            - 現在の貼りつき残りステップ数
+#         constants     : dict             - 'drop_r', 'limit', 'surface_time', 'sample_rate_hz' を含む
 
-    return IO_status
-def IO_check_spot(base_position, temp_position, constants, IO_status, stick_status=0, _depth=0):
+#     Returns:
+#         IOStatus: POLYGON_MODE / INSIDE
+#         new_stick_status: 更新された貼りつき時間（step単位）
+#     """
+
+#     radius = constants['drop_r']
+#     limit = constants['limit']
+#     distance = LA.norm(temp_position)
+
+#     # ① 貼りつき中の処理（stick_status > 0）
+#     if stick_status > 0:
+#         if distance < radius - limit:
+#             # → 先端がdrop内部に戻った → 吸着時間を1減らす
+#             new_stick_status = max(0, stick_status - 1)
+#             if new_stick_status == 0:
+#                 # 吸着終了 → 自由運動へ
+#                 return IOStatus.INSIDE, 0
+#             else:
+#                 # まだ吸着中
+#                 return IOStatus.POLYGON_MODE, new_stick_status
+#         else:
+#             # 外にいる・接触中 → 吸着継続
+#             return IOStatus.POLYGON_MODE, stick_status
+
+#     # ② 吸着していない（stick_status == 0）場合
+#     else:
+#         if distance > radius + limit:
+#             # dropの外に出た → 吸着を開始
+#             new_stick_status = constants["surface_time"] / constants["sample_rate_hz"]
+#             return IOStatus.POLYGON_MODE, new_stick_status
+#         else:
+#             # 中にとどまっている or 境界 → 自由運動継続
+#             return IOStatus.INSIDE, 0
+
+# def IO_check_spot(base_position, temp_position, constants, IO_status, stick_status=0, _depth=0):
     """Spot 形状における IO 判定。``_depth`` は再帰回数の制御用。"""
 
     radius   = constants['radius']
@@ -934,6 +969,7 @@ def IO_check_spot(base_position, temp_position, constants, IO_status, stick_stat
             return IOStatus.INSIDE
 
     return IOStatus.INSIDE
+
 class SpermSimulation:
     def initialize_thickness(self):
         for j in range(self.number_of_sperm):
@@ -1115,272 +1151,117 @@ class SpermSimulation:
                 j, base_position, temp_position,
                 remaining_distance, self.constants
             )
-    def is_vector_meeting_egg(self, base_position, temp_position, egg_center, gamete_r):
-        vector = temp_position - base_position
-        if LA.norm(vector) < 1e-9:
-            raise RuntimeError("zzz")
-        distance_base = LA.norm(base_position - egg_center)
-        distance_tip = LA.norm(temp_position - egg_center)
-        if distance_base <= gamete_r or distance_tip <= gamete_r:
-            return True
-        f = base_position - egg_center
-        a = vector @ vector
-        b = 2 * (f @ vector)
-        c = f @ f - gamete_r**2
-        discriminant = b**2 - 4*a*c
-        if discriminant < 0:
-            return False
-        sqrt_discriminant = np.sqrt(discriminant)
-        t1 = (-b - sqrt_discriminant) / (2*a)
-        t2 = (-b + sqrt_discriminant) / (2*a)
-        if (0 <= t1 <= 1) or (0 <= t2 <= 1):
-            return True
-        return False
+    
     def single_sperm_simulation(self, j, base_position, temp_position, remaining_distance, constants):
         if constants['analysis_type'] == "reflection":
             stick_status = self.initial_stick
         else:
             stick_status = 0
+
         self.trajectory[j, 0] = base_position
         i = 1
         intersection_point = np.array([])
         shape = constants['shape']
         gamete_r = constants['gamete_r']
+
         if shape != "ceros":
-            (egg_x, egg_y, egg_z,
-            e_x_min, e_y_min, e_z_min,
-            e_x_max, e_y_max, e_z_max,
-            egg_center, egg_position_4d) = placement_of_eggs(constants)
+            egg_center = placement_of_eggs(constants)[-2]
         else:
             egg_center = np.array([np.inf, np.inf, np.inf])
-            gamete_r = constants['gamete_r']
-        if self.n_stop is not None and not np.isnan(self.n_stop):
-            max_steps = int(self.n_stop)
-        else:
-            max_steps = self.number_of_steps
-        while i < self.number_of_steps:
-            max_safety_loops = 1000  # 無限ループ防止
 
-            if shape in ["cube", "ceros"]:
-                new_IO_status, vertex_point = IO_check_cube(temp_position, constants)
-            elif shape == "drop":
-                new_IO_status = IO_check_drop(temp_position, stick_status, constants)
-                vertex_point = None
-            elif shape == "spot":
-                prev_stat = self.prev_IO_status[j]
-                if prev_stat is None:
-                    prev_stat = "none"
-                new_IO_status = IO_check_spot(base_position, temp_position, constants, prev_stat, stick_status)
-                vertex_point = None
-            else:
-                new_IO_status = "inside"
-                vertex_point = None
-            prev_stat = self.prev_IO_status[j]
-            if prev_stat in [IOStatus.TEMP_ON_EDGE, IOStatus.TEMP_ON_SURFACE] and (stick_status > 0):
-                if new_IO_status in [
-                    IOStatus.INSIDE,
-                    IOStatus.TEMP_ON_POLYGON,
-                    IOStatus.TEMP_ON_SURFACE,
-                    IOStatus.TEMP_ON_EDGE,
-                    IOStatus.SPOT_BOTTOM,
-            ]:
-                    new_IO_status = prev_stat
-                    vertex_point = None
-            IO_status = new_IO_status
+        max_steps = int(self.n_stop) if self.n_stop and not np.isnan(self.n_stop) else self.number_of_steps
+
+        while i < max_steps:
+            IO_status = self.determine_IO_status(shape, temp_position, base_position, j, stick_status, constants)
+            IO_status = self.override_IO_status_if_necessary(j, IO_status, stick_status)
             self.prev_IO_status[j] = IO_status
+
             if remaining_distance < 0:
-                raise RuntimeError("rd<0")
-            if IO_status in [
-                IOStatus.INSIDE,
-                IOStatus.TEMP_ON_SURFACE,
-                IOStatus.TEMP_ON_EDGE,
-                IOStatus.SPOT_BOTTOM,
-                IOStatus.ON_EDGE_BOTTOM,
-                IOStatus.TEMP_ON_POLYGON,
-        ]:
-                self.trajectory[j, i] = temp_position
-                base_position = self.trajectory[j, i]
-                remaining_distance = constants['step_length']
-                if stick_status > 0:
-                    stick_status -= 1
-                if len(intersection_point) != 0:
-                    last_vec = temp_position - intersection_point
-                    intersection_point = np.array([])
-                else:
-                    last_vec = self.trajectory[j, i] - self.trajectory[j, i - 1]
-                if self.is_vector_meeting_egg(self.trajectory[j, i - 1], temp_position, egg_center, gamete_r):
-                    self.intersection_records.append((j, i))
-                    self.vec_colors[j, i - 1] = "red"
-                    self.vec_thickness_2d[j, i - 1] = 2.0
-                    self.vec_thickness_3d[j, i - 1] = 4.0
-                if IO_status == IOStatus.TEMP_ON_EDGE:
-                    inward_dir = face_and_inward_dir(
-                        temp_position, base_position, last_vec, IO_status, stick_status, constants
-                    )
-                    if inward_dir is None:
-                        inward_dir = np.array([0, 0, 1], dtype=float)
-                    if stick_status > 0:
-                        temp_position = base_position + last_vec
-                    else:
-                        new_vec = prepare_new_vector(
-                            last_vec, constants,
-                            boundary_type="edge",
-                            stick_status=stick_status,
-                            inward_dir=inward_dir
-                        )
-                        temp_position = base_position + new_vec
-                elif IO_status == IOStatus.TEMP_ON_SURFACE:
-                    inward_dir = face_and_inward_dir(
-                        temp_position, base_position, last_vec, IO_status, stick_status, constants
-                    )
-                    if inward_dir is None:
-                        inward_dir = np.array([0, 0, 1], dtype=float)
-                    new_vec = prepare_new_vector(
-                        last_vec, constants,
-                        boundary_type="surface",
-                        stick_status=stick_status,
-                        inward_dir=inward_dir
-                    )
-                    temp_position = base_position + new_vec
-                elif IO_status == IOStatus.SPOT_BOTTOM:
-                    inward_dir = [0, 0, 1]
-                    new_vec = prepare_new_vector(
-                        last_vec, constants,
-                        boundary_type="surface",
-                        stick_status=stick_status,
-                        inward_dir=inward_dir
-                    )
-                    temp_position = base_position + new_vec
-                elif IO_status == IOStatus.ON_EDGE_BOTTOM:
-                    raise RuntimeError("ありえるのか？")
-                elif IO_status == IOStatus.TEMP_ON_POLYGON:
-                    inward_dir = face_and_inward_dir(
-                        temp_position, base_position, last_vec, IO_status, stick_status, constants
-                    )
-                    if inward_dir is None:
-                        inward_dir = np.array([0, 0, 1], dtype=float)
-                    new_vec = prepare_new_vector(
-                        last_vec, constants,
-                        boundary_type="polygon",
-                        stick_status=stick_status,
-                        inward_dir=inward_dir
-                    )
-                    temp_position = base_position + new_vec
-                else:            
-                    self.trajectory[j, i] = temp_position
-                    base_position = self.trajectory[j, i]
-                    remaining_distance = constants['step_length']
-                    if stick_status > 0:
-                        stick_status -= 1
-                    if len(intersection_point) != 0:
-                        last_vec = temp_position - intersection_point
-                        intersection_point = np.array([])
-                    else:
-                        last_vec = self.trajectory[j, i] - self.trajectory[j, i - 1]
-                    if LA.norm(last_vec) < constants['limit']:
-                        raise RuntimeError("last vec is too short!")
-                    new_vec = prepare_new_vector(
-                        last_vec, constants,
-                        boundary_type="free",
-                        stick_status=stick_status,
-                        inward_dir=None
-                    )
-                    temp_position = self.trajectory[j, i] + new_vec
-                i += 1
-                continue
-            elif IO_status == IOStatus.SPHERE_OUT:
-                if stick_status == 0:
-                    stick_status = int(constants['surface_time'] / constants['sample_rate_hz'])
-                if shape == "drop":
-                    new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_drop(
-                        self.trajectory[j, i - 1],
-                        remaining_distance,
-                        temp_position,
-                        constants,
-                    )
-                else:
-                    new_temp_pos, intersection_point, remaining_dist, inward_dir = cut_and_bend_sphere(
-                        self.trajectory[j, i - 1],
-                        remaining_distance,
-                        temp_position,
-                        constants,
-                    )
-                base_position = intersection_point
-                temp_position = new_temp_pos
-                last_vec = temp_position - intersection_point
-                IO_status = IOStatus.POLYGON_MODE
-                continue
-            elif IO_status == IOStatus.POLYGON_MODE:
-                self.trajectory[j, i] = temp_position
-                base_position = self.trajectory[j, i]
-                if len(intersection_point) != 0:
-                    last_vec = temp_position - intersection_point
-                    intersection_point = np.array([])
-                else:
-                    last_vec = self.trajectory[j, i] - self.trajectory[j, i - 1]
-                if shape == "drop":
-                    new_temp_position, new_last_vec, updated_stick, next_state = self.drop_polygon_move(
-                        base_position, last_vec, stick_status, constants
-                    )
-                else:
-                    new_temp_position, new_last_vec, updated_stick, next_state = self.bottom_edge_mode(
-                        base_position, last_vec, stick_status, constants
-                    )
-                temp_position = new_temp_position
-                last_vec = new_last_vec
-                stick_status = updated_stick
-                i += 1
-                IO_status = next_state
-                continue
-            elif IO_status == IOStatus.SPOT_EDGE_OUT:
-                if stick_status == 0:
-                    stick_status = int(constants['surface_time'] / constants['sample_rate_hz'])
-                (new_temp_pos,
-                 intersection_point,
-                 remaining_distance,
-                 is_bottom_edge) = cut_and_bend_spot_edge_out(
-                     self, IO_status, base_position, temp_position, remaining_distance, constants
-                )
-                base_position = intersection_point
-                temp_position = new_temp_pos
-                last_vec = temp_position - intersection_point
-                continue
-            elif IO_status == IOStatus.BOTTOM_OUT:
-                if stick_status == 0:
-                    stick_status = int(constants['surface_time'] / constants['sample_rate_hz'])
-                (new_temp_pos,
-                 intersection_point,
-                 remaining_distance) = cut_and_bend_bottom(
-                     self, IO_status, base_position, temp_position, remaining_distance, constants
-                )
-                base_position = intersection_point
-                temp_position = new_temp_pos
-                last_vec = temp_position - intersection_point
-                continue
-            elif IO_status in [IOStatus.SURFACE_OUT, IOStatus.EDGE_OUT]:
-                if stick_status == 0:
-                    stick_status = int(constants['surface_time'] / constants['sample_rate_hz'])
-                (new_temp_pos,
-                 intersection_point,
-                 remaining_distance) = cut_and_bend_cube(
-                     self, IO_status, base_position, temp_position, remaining_distance, constants
-                )
-                base_position = intersection_point
-                temp_position = new_temp_pos
-                last_vec = temp_position - intersection_point
-                continue
-            elif IO_status == IOStatus.VERTEX_OUT:
-                if stick_status == 0:
-                    stick_status = int(constants['surface_time'] / constants['sample_rate_hz'])
-                (intersection_point,
-                 new_temp_pos,
-                 remaining_distance) = cut_and_bend_vertex(
-                     vertex_point, base_position, remaining_distance, constants
-                )
-                base_position = intersection_point
-                temp_position = new_temp_pos
-                last_vec = temp_position - intersection_point
-                continue
+                raise RuntimeError("remaining_distance < 0")
+
+            handler = self.status_handlers.get(IO_status, self.handle_unknown_status)
+            IO_status, base_position, temp_position, last_vec, stick_status = handler(
+                j, i, IO_status, base_position, temp_position, intersection_point, stick_status, constants
+            )
+
+            if self.is_vector_meeting_egg(self.trajectory[j, i - 1], temp_position, egg_center, gamete_r):
+                self.intersection_records.append((j, i))
+                self.vec_colors[j, i - 1] = "red"
+                self.vec_thickness_2d[j, i - 1] = 3.0
+                self.vec_thickness_3d[j, i - 1] = 5.0
+
+            i += 1
+
+    # ↓ IOStatus ごとの処理関数たち
+
+    def handle_inside(self, j, i, status, base_pos, temp_pos, intersection, stick_status, constants):
+        self.trajectory[j, i] = temp_pos
+        base_pos = temp_pos
+        last_vec = temp_pos - self.trajectory[j, i - 1] if len(intersection) == 0 else temp_pos - intersection
+        if stick_status > 0:
+            stick_status -= 1
+        return status, base_pos, temp_pos, last_vec, stick_status
+
+    def handle_temp_on_edge(self, j, i, status, base_pos, temp_pos, intersection, stick_status, constants):
+        last_vec = temp_pos - intersection if len(intersection) else temp_pos - self.trajectory[j, i - 1]
+        inward_dir = face_and_inward_dir(temp_pos, base_pos, last_vec, status, stick_status, constants) or np.array([0, 0, 1])
+        if stick_status > 0:
+            new_vec = last_vec
+        else:
+            new_vec = prepare_new_vector(last_vec, constants, "edge", stick_status, inward_dir)
+        temp_pos = base_pos + new_vec
+        self.trajectory[j, i] = temp_pos
+        return status, temp_pos, temp_pos, new_vec, stick_status
+
+    def handle_temp_on_surface(self, j, i, status, base_pos, temp_pos, intersection, stick_status, constants):
+        last_vec = temp_pos - intersection if len(intersection) else temp_pos - self.trajectory[j, i - 1]
+        inward_dir = face_and_inward_dir(temp_pos, base_pos, last_vec, status, stick_status, constants) or np.array([0, 0, 1])
+        new_vec = prepare_new_vector(last_vec, constants, "surface", stick_status, inward_dir)
+        temp_pos = base_pos + new_vec
+        self.trajectory[j, i] = temp_pos
+        return status, temp_pos, temp_pos, new_vec, stick_status
+
+    def handle_temp_on_polygon(self, j, i, status, base_pos, temp_pos, intersection, stick_status, constants):
+        last_vec = temp_pos - intersection if len(intersection) else temp_pos - self.trajectory[j, i - 1]
+        inward_dir = face_and_inward_dir(temp_pos, base_pos, last_vec, status, stick_status, constants) or np.array([0, 0, 1])
+        new_vec = prepare_new_vector(last_vec, constants, "polygon", stick_status, inward_dir)
+        temp_pos = base_pos + new_vec
+        self.trajectory[j, i] = temp_pos
+        return status, temp_pos, temp_pos, new_vec, stick_status
+
+    def handle_spot_bottom(self, j, i, status, base_pos, temp_pos, intersection, stick_status, constants):
+        last_vec = temp_pos - intersection if len(intersection) else temp_pos - self.trajectory[j, i - 1]
+        inward_dir = np.array([0, 0, 1])
+        new_vec = prepare_new_vector(last_vec, constants, "surface", stick_status, inward_dir)
+        temp_pos = base_pos + new_vec
+        self.trajectory[j, i] = temp_pos
+        return status, temp_pos, temp_pos, new_vec, stick_status
+
+    def handle_polygon_mode(self, j, i, status, base_pos, temp_pos, intersection, stick_status, constants):
+        self.trajectory[j, i] = temp_pos
+        last_vec = temp_pos - base_pos if len(intersection) == 0 else temp_pos - intersection
+        base_pos = temp_pos
+        if constants['shape'] == "drop":
+            new_temp_pos, new_last_vec, new_stick_status, next_status = self.drop_polygon_move(base_pos, last_vec, stick_status, constants)
+        else:
+            new_temp_pos, new_last_vec, new_stick_status, next_status = self.bottom_edge_mode(base_pos, last_vec, stick_status, constants)
+        return next_status, base_pos, new_temp_pos, new_last_vec, new_stick_status
+
+    def handle_sphere_out(self, j, i, status, base_pos, temp_pos, intersection, stick_status, constants):
+        if stick_status == 0:
+            stick_status = int(constants['surface_time'] / constants['sample_rate_hz'])
+        if constants['shape'] == "drop":
+            new_temp_pos, intersection, _, _ = cut_and_bend_drop(self.trajectory[j, i - 1], constants['step_length'], temp_pos, constants)
+        else:
+            new_temp_pos, intersection, _, _ = cut_and_bend_sphere(self.trajectory[j, i - 1], constants['step_length'], temp_pos, constants)
+        base_pos = intersection
+        temp_pos = new_temp_pos
+        last_vec = temp_pos - intersection
+        return IOStatus.POLYGON_MODE, base_pos, temp_pos, last_vec, stick_status
+
+    def handle_unknown_status(self, j, i, status, *args, **kwargs):
+        raise RuntimeError(f"未定義の IOStatus: {status}")
+
     def bottom_edge_mode(self, base_position, last_vec, stick_status, constants):
         """
         底面を這いつつ底面の円周に当たった時の処理。
@@ -2342,9 +2223,9 @@ def _detect_boundary(shape, base_position, temp_position, stick_status, constant
     return IOStatus.INSIDE, None, temp_position
 
                     # CSVファイルとして保存
-                    os.makedirs("output", exist_ok=True)
-                    with open(f"output/intersections_sim{simulation_id}.csv", "w", newline="") as f:
-                        writer = csv.writer(f)
-                        writer.writerow(["simulation_id", "sperm_index", "step_index"])
-                        for sperm_index, step_index in intersection_records:
-                            writer.writerow([simulation_id, sperm_index, step_index])
+    os.makedirs("output", exist_ok=True)
+    with open(f"output/intersections_sim{simulation_id}.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["simulation_id", "sperm_index", "step_index"])
+        for sperm_index, step_index in intersection_records:
+            writer.writerow([simulation_id, sperm_index, step_index])

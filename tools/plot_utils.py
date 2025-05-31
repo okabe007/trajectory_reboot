@@ -8,7 +8,8 @@ from datetime import datetime
 from mpl_toolkits.mplot3d import Axes3D
 from tools.derived_constants import get_limits
 from tools.derived_constants import _egg_position  # 必要ならtoolsに移動しておく
-
+import sys
+print("[DEBUG] sys.path =", sys.path)
 # =======================
 # 🔧 共通ヘルパー関数
 # =======================
@@ -107,9 +108,10 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
 
     # 軌跡描画
     for s in range(min(max_sperm, trajs.shape[0])):
-        axs[0].plot(trajs[s, :, 0], trajs[s, :, 1])  # XY
-        axs[1].plot(trajs[s, :, 0], trajs[s, :, 2])  # XZ
-        axs[2].plot(trajs[s, :, 1], trajs[s, :, 2])  # YZ
+        axs[0].plot(trajs[s, :, 0], trajs[s, :, 1], linewidth=0.6)  # XY
+        axs[1].plot(trajs[s, :, 0], trajs[s, :, 2], linewidth=0.6)  # XZ
+        axs[2].plot(trajs[s, :, 1], trajs[s, :, 2], linewidth=0.6)  # YZ
+
 
     # 背景（メディウム）描画
     if shape == "drop":

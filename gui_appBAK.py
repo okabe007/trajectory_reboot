@@ -1,8 +1,5 @@
-import os
-import sys
-project_root = os.path.abspath(os.path.dirname(__file__))
-sys.path.append(project_root)
 
+import os
 import tkinter as tk
 from tkinter import ttk
 import configparser
@@ -11,6 +8,11 @@ import math
 from core.simulation import SpermSimulation       # ← ここで派生変数計算を呼ぶ
 from tools.plot_utils import plot_2d_trajectories # plot_3d_trajectories
 from tools.derived_constants import calculate_derived_constants
+import sys
+
+
+# プロジェクトのルートパスを取得（このファイルの親フォルダ）
+project_root = os.path.abspath(os.path.dirname(__file__))
 
 # ルートがsys.pathに含まれていなければ追加
 if project_root not in sys.path:
@@ -137,9 +139,6 @@ class SimApp(tk.Tk):
 
         self.config_data = load_config()  # .ini → dict
         self.tk_vars: dict[str, tk.Variable] = {}  # Param ↔ Tk 変数
-        self.save_var = tk.BooleanVar()
-        self.save_var.set(True)
-        ttk.Checkbutton(self, text='結果を保存する', variable=self.save_var).pack(anchor='w', padx=10, pady=5)
 
         # スクロールキャンバス
         canvas = tk.Canvas(self)
@@ -193,23 +192,10 @@ class SimApp(tk.Tk):
         # --- sperm_conc --------------------------------------------------
         self.tk_vars["sperm_conc"] = tk.DoubleVar()
         ttk.Label(parent, text="sperm_conc (cells/mL):").pack(anchor="w", padx=10, pady=(10, 0))
-        f_conc = ttk.Frame(parent)
-        f_conc.pack(anchor="w", padx=30)
-
+        f_conc = ttk.Frame(parent); f_conc.pack(anchor="w", padx=30)
         for v in [1e3, 3.16e3, 1e4, 3.162e4, 1e5]:
-            ttk.Radiobutton(
-                f_conc,
-                text=f"{int(v):,}",
-                variable=self.tk_vars["sperm_conc"],
-                value=v
-            ).pack(side="left", padx=2)
-
-        # --- save_var チェックボックス -----------------------------------
-        self.save_var = tk.BooleanVar()
-        self.save_var.set(True)
-        ttk.Checkbutton(parent, text='結果を保存する', variable=self.save_var).pack(anchor='w', padx=10, pady=5)
-
-
+            ttk.Radiobutton(f_conc, text=f"{int(v):,}", variable=self.tk_vars["sperm_conc"],
+                            value=float(v)).pack(side="left")
 
         # --- vsl ---------------------------------------------------------
         self.tk_vars["vsl"] = tk.DoubleVar()
@@ -290,10 +276,6 @@ class SimApp(tk.Tk):
         for v in ["2D", "3D", "movie"]:
             ttk.Radiobutton(f_disp, text=v, variable=self.tk_vars["display_mode"], value=v
                             ).pack(side="left")
-
-        self.save_var = tk.BooleanVar()
-        self.save_var.set(True)
-        ttk.Checkbutton(parent, text="save results", variable=self.save_var).pack(anchor="w", padx=10, pady=5)
 
         # --- 実行ボタン --------------------------------------------------
         ttk.Button(parent, text="Save settings and run simulation",
@@ -411,10 +393,10 @@ class SimApp(tk.Tk):
         # --- ⑥ シミュレーション実行 --------------------------------------
         sim = SpermSimulation(self.config_data)
         sim.run(
-            self.config_data,
-            './results',
-            'sim_result',
-            self.save_var.get()
+            self.config_data,              # ← constants: dict
+            "./results",                   # ← result_dir: str（必要ならGUIから取得）
+            "sim_result",                  # ← save_name: str（日時付きでもOK）
+            self.save_var.get()            # ← save_flag: bool
         )
 
         if "movie" in self.config_data["display_mode"]:

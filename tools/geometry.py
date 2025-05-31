@@ -3,30 +3,30 @@ from numpy import linalg as LA
 from typing import Dict      # ★ この行を追加
 from typing import Tuple
 
-def _io_check_drop(
-    position: np.ndarray, constants: dict, base_position: np.ndarray
-) -> str:
-    """Return in/out status for drop shape with extended boundary check."""
+# def _io_check_drop(
+#     position: np.ndarray, constants: dict, base_position: np.ndarray
+# ) -> str:
+#     """Return in/out status for drop shape with extended boundary check."""
 
-    r = constants.get("drop_r", 0.0)
-    limit = constants.get("limit", 1e-9)
+#     r = constants.get("drop_r", 0.0)
+#     limit = constants.get("limit", 1e-9)
 
-    dist = np.linalg.norm(position)
+#     dist = np.linalg.norm(position)
 
-    if dist > r + limit:
-        return "outside"
-    if dist < r - limit:
-        return "inside"
+#     if dist > r + limit:
+#         return "outside"
+#     if dist < r - limit:
+#         return "inside"
 
-    # Near the border, extend the vector from ``base_position``
-    # to ``position`` and re-evaluate.
-    vector = position - base_position
-    extended_position = base_position + vector * 1.2
-    extended_dist = np.linalg.norm(extended_position)
+#     # Near the border, extend the vector from ``base_position``
+#     # to ``position`` and re-evaluate.
+#     vector = position - base_position
+#     extended_position = base_position + vector * 1.2
+#     extended_dist = np.linalg.norm(extended_position)
 
-    if extended_dist <= r:
-        return "inside"
-    return "outside"
+#     if extended_dist <= r:
+#         return "inside"
+#     return "outside"
 
 
 def bend_along_sphere_surface(vec: np.ndarray, normal: np.ndarray, angle_rad: float) -> np.ndarray:

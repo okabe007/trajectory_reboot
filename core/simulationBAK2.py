@@ -8,85 +8,118 @@ from matplotlib.animation import FuncAnimation
 from typing import Tuple
 from numpy import linalg as LA
 
-
+from tools.io_checks import IO_check_drop
 from tools.derived_constants import _egg_position, calculate_derived_constants
 from tools.plot_utils import plot_2d_trajectories, plot_3d_movie_trajectories
 
 from tools.geometry import CubeShape, DropShape, SpotShape, CerosShape, _handle_drop_outside
 from core.simulation_core import SpermSimulation
-from core.simulation_core import SpotIO, _spot_status_check
-from tools.io_checks import IO_check_spot
-from tools.io_checks import IO_check_drop
-from tools.io_checks import IO_check_cube
-# def IO_check_spot(base_position: np.ndarray, temp_position: np.ndarray, constants: dict, IO_status: str) -> str:
-#     radius   = constants['radius']
-#     bottom_z = constants['spot_bottom_height']
-#     bottom_R = constants['spot_bottom_r']  # ← 小文字に注意
-#     limit    = constants['limit']
 
-#     z_tip = temp_position[2]
-#     r_tip = LA.norm(temp_position)
-#     xy_dist = np.sqrt(temp_position[0]**2 + temp_position[1]**2)
+def IO_check_spot(base_position: np.ndarray, temp_position: np.ndarray, constants: dict, IO_status: str) -> str:
+    radius   = constants['radius']
+    bottom_z = constants['spot_bottom_height']
+    bottom_R = constants['spot_bottom_r']  # ← 小文字に注意
+    limit    = constants['limit']
 
-#     if z_tip > bottom_z + limit:
-#         if r_tip > radius + limit:
-#             return "sphere_out"
+    z_tip = temp_position[2]
+    r_tip = LA.norm(temp_position)
+    xy_dist = np.sqrt(temp_position[0]**2 + temp_position[1]**2)
+
+    if z_tip > bottom_z + limit:
+        if r_tip > radius + limit:
+            return "sphere_out"
 
 
 
 
+def _make_local_basis(forward: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return two unit vectors orthogonal to ``forward``."""
+    f = forward / (np.linalg.norm(forward) + 1e-12)
+    if abs(f[0]) < 0.9:
+        base = np.array([1.0, 0.0, 0.0])
+    else:
+        base = np.array([0.0, 1.0, 0.0])
+    y = np.cross(f, base)
+    y /= np.linalg.norm(y) + 1e-12
+    x = np.cross(y, f)
+    return x, y
+
+
+def _perturb_direction(prev: np.ndarray, deviation: float, rng: np.random.Generator) -> np.ndarray:
+    """Return a unit vector deviated from ``prev``."""
+    lx, ly = _make_local_basis(prev)
+    theta = rng.normal(0.0, deviation)
+    phi = rng.uniform(-np.pi, np.pi)
+    new_dir = (
+        np.cos(theta) * prev
+        + np.sin(theta) * (np.cos(phi) * lx + np.sin(phi) * ly)
+    )
+    new_dir /= np.linalg.norm(new_dir) + 1e-12
+    return new_dir
 
 
 
-#     INSIDE = "inside"
-#     BORDER = "border"
-#     SPHERE_OUT = "sphere_out"
-#     BOTTOM_OUT = "bottom_out"
-#     SPOT_EDGE_OUT = "spot_edge_out"
-#     POLYGON_MODE = "polygon_mode"
-#     SPOT_BOTTOM = "spot_bottom"
+class SpotIO:
+    """Status constants for spot geometry."""
+
+    INSIDE = "inside"
+    BORDER = "border"
+    SPHERE_OUT = "sphere_out"
+    BOTTOM_OUT = "bottom_out"
+    SPOT_EDGE_OUT = "spot_edge_out"
+    POLYGON_MODE = "polygon_mode"
+    SPOT_BOTTOM = "spot_bottom"
 
 
-#     radius = constants.get("spot_r", constants.get("radius", 0.0))
-#     bottom_z = constants.get("spot_bottom_height", 0.0)
-#     bottom_r = constants.get("spot_bottom_r", 0.0)
-#     limit = constants.get("limit", 1e-9)
+def _spot_status_check(
+    base_position: np.ndarray,
+    temp_position: np.ndarray,
+    constants: dict,
+    prev_stat: str = "inside",
+    stick_status: int = 0,
+) -> str:
+    """Return IO status for spot shape without modifying the position."""
 
-#     z_tip = temp_position[2]
-#     r_tip = np.linalg.norm(temp_position)
-#     xy_dist = np.linalg.norm(temp_position[:2])
+    radius = constants.get("spot_r", constants.get("radius", 0.0))
+    bottom_z = constants.get("spot_bottom_height", 0.0)
+    bottom_r = constants.get("spot_bottom_r", 0.0)
+    limit = constants.get("limit", 1e-9)
 
-#     if z_tip > bottom_z + limit:
-#         if r_tip > radius + limit:
-#             return SpotIO.SPHERE_OUT
-#         if r_tip < radius - limit:
-#             return SpotIO.POLYGON_MODE if stick_status > 0 else SpotIO.INSIDE
-#         return SpotIO.BORDER
+    z_tip = temp_position[2]
+    r_tip = np.linalg.norm(temp_position)
+    xy_dist = np.linalg.norm(temp_position[:2])
 
-#     if z_tip < bottom_z - limit:
-#         denom = temp_position[2] - base_position[2]
-#         if abs(denom) < limit:
-#             return SpotIO.SPHERE_OUT
-#         t = (bottom_z - base_position[2]) / denom
-#         if t < 0 or t > 1:
-#             return SpotIO.SPHERE_OUT
-#         intersect_xy = base_position[:2] + t * (temp_position[:2] - base_position[:2])
-#         dist_xy = np.linalg.norm(intersect_xy)
-#         if dist_xy < bottom_r + limit:
-#             return SpotIO.BOTTOM_OUT
-#         return SpotIO.SPHERE_OUT
+    if z_tip > bottom_z + limit:
+        if r_tip > radius + limit:
+            return SpotIO.SPHERE_OUT
+        if r_tip < radius - limit:
+            return SpotIO.POLYGON_MODE if stick_status > 0 else SpotIO.INSIDE
+        return SpotIO.BORDER
 
-#     if bottom_z - limit < z_tip < bottom_z + limit:
-#         if xy_dist > bottom_r + limit:
-#             return SpotIO.SPOT_EDGE_OUT
-#         if abs(xy_dist - bottom_r) <= limit:
-#             return SpotIO.BORDER
-#         if xy_dist < bottom_r - limit:
-#             if prev_stat in (SpotIO.SPOT_EDGE_OUT, SpotIO.POLYGON_MODE) or stick_status > 0:
-#                 return SpotIO.POLYGON_MODE
-#             return SpotIO.SPOT_BOTTOM
+    if z_tip < bottom_z - limit:
+        denom = temp_position[2] - base_position[2]
+        if abs(denom) < limit:
+            return SpotIO.SPHERE_OUT
+        t = (bottom_z - base_position[2]) / denom
+        if t < 0 or t > 1:
+            return SpotIO.SPHERE_OUT
+        intersect_xy = base_position[:2] + t * (temp_position[:2] - base_position[:2])
+        dist_xy = np.linalg.norm(intersect_xy)
+        if dist_xy < bottom_r + limit:
+            return SpotIO.BOTTOM_OUT
+        return SpotIO.SPHERE_OUT
 
-#     return SpotIO.INSIDE
+    if bottom_z - limit < z_tip < bottom_z + limit:
+        if xy_dist > bottom_r + limit:
+            return SpotIO.SPOT_EDGE_OUT
+        if abs(xy_dist - bottom_r) <= limit:
+            return SpotIO.BORDER
+        if xy_dist < bottom_r - limit:
+            if prev_stat in (SpotIO.SPOT_EDGE_OUT, SpotIO.POLYGON_MODE) or stick_status > 0:
+                return SpotIO.POLYGON_MODE
+            return SpotIO.SPOT_BOTTOM
+
+    return SpotIO.INSIDE
 
 
 def _io_check_spot(
@@ -367,15 +400,6 @@ class SpermSimulation:
             vec /= np.linalg.norm(vec) + 1e-12
             self.initial_vectors[j] = vec
 
-        
-        number_of_sperm = self.constants["number_of_sperm"]
-        self.initial_position = np.zeros((number_of_sperm, 3))  # N個のベクトルを格納
-
-        for j in range(number_of_sperm):
-            self.initial_position[j] = shape_obj.initial_position()
-
-        # === 初期位置とベクトルのチェック ===    
-        
         # === 配列初期化 ===
         self.trajectory = np.zeros((self.number_of_sperm, self.number_of_steps, 3))
         self.vectors = np.zeros((self.number_of_sperm, self.number_of_steps, 3))
@@ -441,8 +465,7 @@ class SpermSimulation:
                 # === 状態の記録 ===
                 self.trajectory[j, i] = pos
                 self.vectors[j, i] = vec
-        print("[DEBUG] 初期位置数:", len(self.initial_position))
-        print("[DEBUG] 精子数:", self.constants["number_of_sperm"])
+
 
 
     import matplotlib.pyplot as plt
