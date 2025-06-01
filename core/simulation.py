@@ -1,3 +1,4 @@
+from io_status import IOStatus
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import patches
@@ -60,7 +61,7 @@ from tools.io_checks import IO_check_cube
 #         if r_tip > radius + limit:
 #             return SpotIO.SPHERE_OUT
 #         if r_tip < radius - limit:
-#             return SpotIO.POLYGON_MODE if stick_status > 0 else SpotIO.INSIDE
+#             return SpotIO.POLYGON_MODE if stick_status > 0 else IOStatus.INSIDE
 #         return SpotIO.BORDER
 
 #     if z_tip < bottom_z - limit:
@@ -86,7 +87,7 @@ from tools.io_checks import IO_check_cube
 #                 return SpotIO.POLYGON_MODE
 #             return SpotIO.SPOT_BOTTOM
 
-#     return SpotIO.INSIDE
+#     return IOStatus.INSIDE
 
 
 def _io_check_spot(
@@ -115,7 +116,7 @@ def _io_check_spot(
 
     for _ in range(10):
         if status in (
-            SpotIO.INSIDE,
+            IOStatus.INSIDE,
             SpotIO.BORDER,
             SpotIO.SPOT_BOTTOM,
             SpotIO.POLYGON_MODE,
@@ -332,50 +333,45 @@ class SpermSimulation:
         全てのshape（cube, drop, spot, ceros）に対応した精子運動シミュレーション実行関数。
         self.trajectory および self.vectors を更新する。
         """
-        shape = self.constants["shape"]
-        step_len = self.constants["step_length"]
-        vsl = self.constants["vsl"]
-        hz = self.constants["sample_rate_hz"]
-        deviation = self.constants["deviation"]
-        seed = int(self.constants.get("seed_number", 0))
+        self.constants = constants
+        shape = constants["shape"]
+        step_len = constants["step_length"]
+        vsl = constants["vsl"]
+        hz = constants["sample_rate_hz"]
+        deviation = constants["deviation"]
+        seed = int(constants.get("seed_number", 0))
 
-        self.number_of_sperm = int(self.constants["sperm_conc"] * self.constants["vol"] * 1e-3)
-        self.number_of_steps = int(self.constants["sim_min"] * hz * 60)
+        self.number_of_sperm = int(constants["sperm_conc"] * constants["vol"] * 1e-3)
+        self.number_of_steps = int(constants["sim_min"] * hz * 60)
 
         rng = np.random.default_rng(seed)
 
-        # === 初期位置の決定 ===
+        # === 初期位置と形状オブジェクト ===
         if shape == "drop":
-            shape_obj = DropShape(self.constants)
-            self.initial_position = shape_obj.initial_position()
+            shape_obj = DropShape(constants)
         elif shape == "cube":
-            shape_obj = CubeShape(self.constants)
-            self.initial_position = shape_obj.initial_position()
+            shape_obj = CubeShape(constants)
         elif shape == "spot":
-            shape_obj = SpotShape(self.constants)
-            self.initial_position = shape_obj.initial_position()
+            shape_obj = SpotShape(constants)
         elif shape == "ceros":
             shape_obj = None
-            self.initial_position = np.full((self.number_of_sperm, 3), np.inf)
         else:
             raise ValueError(f"Unknown shape: {shape}")
 
-        # === 初期ベクトル（球面方向にランダム） ===
+        if shape == "ceros":
+            self.initial_position = np.full((self.number_of_sperm, 3), np.inf)
+        else:
+            self.initial_position = np.zeros((self.number_of_sperm, 3))
+            for j in range(self.number_of_sperm):
+                self.initial_position[j] = shape_obj.initial_position()
+
+        # === 初期ベクトル（ランダム方向） ===
         self.initial_vectors = np.zeros((self.number_of_sperm, 3))
         for j in range(self.number_of_sperm):
             vec = rng.normal(0, 1, 3)
             vec /= np.linalg.norm(vec) + 1e-12
             self.initial_vectors[j] = vec
 
-        
-        number_of_sperm = self.constants["number_of_sperm"]
-        self.initial_position = np.zeros((number_of_sperm, 3))  # N個のベクトルを格納
-
-        for j in range(number_of_sperm):
-            self.initial_position[j] = shape_obj.initial_position()
-
-        # === 初期位置とベクトルのチェック ===    
-        
         # === 配列初期化 ===
         self.trajectory = np.zeros((self.number_of_sperm, self.number_of_steps, 3))
         self.vectors = np.zeros((self.number_of_sperm, self.number_of_steps, 3))
@@ -391,58 +387,49 @@ class SpermSimulation:
             self.vectors[j, 0] = vec
 
             for i in range(1, self.number_of_steps):
-                # 方向ベクトルにゆらぎを加える
                 vec += rng.normal(0, deviation, 3)
                 vec /= np.linalg.norm(vec) + 1e-12
-
                 candidate = pos + vec * step_len
 
-                # === 形状ごとのIO判定 ===
+                # === IO 判定 ===
                 if shape == "cube":
-                    status = IO_check_cube(candidate, self.constants)
-
+                    status, _ = IO_check_cube(candidate, constants)
                 elif shape == "drop":
-                    status = IO_check_drop(candidate, stick_status, self.constants)
-
+                    status, stick_status = IO_check_drop(candidate, stick_status, constants)
                 elif shape == "spot":
-                    status = IO_check_spot(pos, candidate, self.constants, prev_stat, stick_status)
+                    status = IO_check_spot(pos, candidate, constants, prev_stat, stick_status)
                     prev_stat = status
-
                 elif shape == "ceros":
-                    status = "inside"
-
+                    status = IOStatus.INSIDE
                 else:
                     raise ValueError(f"Unknown shape: {shape}")
 
-                # === ステータスに応じて処理分岐 ===
-                if status == "inside":
-                    pos = candidate  # 通常移動
+                # === ステータスごとの挙動 ===
+                if status in [IOStatus.INSIDE, IOStatus.INSIDE]:
+                    pos = candidate
 
-                elif status == "reflect":
-                    vec *= -1  # 簡易反射（詳細処理を入れても可）
+                elif status in [IOStatus.REFLECT, SpotIO.REFLECT]:
+                    vec *= -1
 
-                elif status == "stick":
-                    stick_status = int(self.constants["surface_time"] / hz)
-                    # posは更新しない → 貼り付き
+                elif status in [IOStatus.STICK, SpotIO.STICK, SpotIO.POLYGON_MODE]:
+                    stick_status = int(constants["surface_time"] / hz)
 
-                elif status == "polygon_mode":
-                    # spotのみの特殊判定
-                    stick_status = int(self.constants["surface_time"] / hz)
+                elif status in [IOStatus.BORDER, SpotIO.BORDER, SpotIO.BOTTOM_OUT]:
+                    pass  # 境界付近で停止
+                elif status in [IOStatus.BORDER, IOStatus.BOTTOM_OUT, IOStatus.SPOT_EDGE_OUT]:
+                    pass  # 停止や跳ね返り処理なし（その場維持）
 
-                elif status in ["border", "bottom_out"]:
-                    # 境界付近では動かさずそのまま
-                    pass
 
                 else:
-                    # 想定外のステータス
                     print(f"[WARNING] Unexpected status: {status}")
                     pass
 
-                # === 状態の記録 ===
                 self.trajectory[j, i] = pos
                 self.vectors[j, i] = vec
+
         print("[DEBUG] 初期位置数:", len(self.initial_position))
-        print("[DEBUG] 精子数:", self.constants["number_of_sperm"])
+        print("[DEBUG] 精子数:", self.number_of_sperm)
+        self.trajectories = self.trajectory  # 外部用に公開
 
 
     import matplotlib.pyplot as plt

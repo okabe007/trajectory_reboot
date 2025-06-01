@@ -8,7 +8,7 @@ def IO_check_drop(
     temp_position: np.ndarray,
     stick_status: float,
     constants: dict
-) -> Tuple["IOStatus", float]:
+    ) -> Tuple["IOStatus", float]:
     """
     Drop型空間におけるIO判定および吸着状態の管理。
 
@@ -52,19 +52,38 @@ def IO_check_drop(
             return IOStatus.INSIDE, 0
 
 def IO_check_cube(temp_position, constants):
-    x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
-    def classify_dimension(pos, min_val, max_val, constants):
-        if pos < min_val - constants['limit']:
+    """
+    Cube 型空間における IO 判定。min/max を直接 constants から参照。
+
+    Parameters:
+        temp_position : np.ndarray - 判定対象の位置
+        constants     : dict       - 'x_min' などを含む設定辞書
+
+    Returns:
+        IOStatus, vertex_coords (if applicable)
+    """
+    x_min = constants['x_min']
+    x_max = constants['x_max']
+    y_min = constants['y_min']
+    y_max = constants['y_max']
+    z_min = constants['z_min']
+    z_max = constants['z_max']
+    limit = constants['limit']
+
+    def classify_dimension(pos, min_val, max_val):
+        if pos < min_val - limit:
             return IOStatus.OUTSIDE
-        elif pos > max_val + constants['limit']:
+        elif pos > max_val + limit:
             return IOStatus.OUTSIDE
-        elif abs(pos - min_val) <= constants['limit'] or abs(pos - max_val) <= constants['limit']:
+        elif abs(pos - min_val) <= limit or abs(pos - max_val) <= limit:
             return IOStatus.SURFACE
         else:
             return IOStatus.INSIDE
-    x_class = classify_dimension(temp_position[0], x_min, x_max, constants)
-    y_class = classify_dimension(temp_position[1], y_min, y_max, constants)
-    z_class = classify_dimension(temp_position[2], z_min, z_max, constants)
+
+    x_class = classify_dimension(temp_position[0], x_min, x_max)
+    y_class = classify_dimension(temp_position[1], y_min, y_max)
+    z_class = classify_dimension(temp_position[2], z_min, z_max)
+
     classifications = [x_class, y_class, z_class]
     inside_count  = classifications.count(IOStatus.INSIDE)
     surface_count = classifications.count(IOStatus.SURFACE)
@@ -81,38 +100,21 @@ def IO_check_cube(temp_position, constants):
     elif inside_count == 1 and outside_count == 2:
         return IOStatus.SURFACE_OUT, None
     elif inside_count == 0 and surface_count == 2 and outside_count == 1:
+        # VERTEX_OUT の場合、頂点座標も返す
         vx, vy, vz = None, None, None
         x, y, z = temp_position
         if x_class == IOStatus.SURFACE:
-            if abs(x - x_min) <= constants['limit']:
-                vx = x_min
-            else:
-                vx = x_max
+            vx = x_min if abs(x - x_min) <= limit else x_max
         elif x_class == IOStatus.OUTSIDE:
-            if x < x_min - constants['limit']:
-                vx = x_min
-            else:
-                vx = x_max
+            vx = x_min if x < x_min - limit else x_max
         if y_class == IOStatus.SURFACE:
-            if abs(y - y_min) <= constants['limit']:
-                vy = y_min
-            else:
-                vy = y_max
+            vy = y_min if abs(y - y_min) <= limit else y_max
         elif y_class == IOStatus.OUTSIDE:
-            if y < y_min - constants['limit']:
-                vy = y_min
-            else:
-                vy = y_max
+            vy = y_min if y < y_min - limit else y_max
         if z_class == IOStatus.SURFACE:
-            if abs(z - z_min) <= constants['limit']:
-                vz = z_min
-            else:
-                vz = z_max
+            vz = z_min if abs(z - z_min) <= limit else z_max
         elif z_class == IOStatus.OUTSIDE:
-            if z < z_min - constants['limit']:
-                vz = z_min
-            else:
-                vz = z_max
+            vz = z_min if z < z_min - limit else z_max
         vertex_coords = np.array([vx, vy, vz], dtype=float)
         return IOStatus.VERTEX_OUT, vertex_coords
     elif (
@@ -183,72 +185,3 @@ def IO_check_spot(base_position, temp_position, constants, IO_status, stick_stat
 
     return IOStatus.INSIDE
 
-# def IO_check_spot(base_position: np.ndarray, temp_position: np.ndarray, constants: dict, IO_status: str) -> str:
-#     radius   = constants['radius']
-#     bottom_z = constants['spot_bottom_height']
-#     bottom_R = constants['spot_bottom_r']  # ← 小文字に注意
-#     limit    = constants['limit']
-
-#     z_tip = temp_position[2]
-#     r_tip = LA.norm(temp_position)
-#     xy_dist = np.sqrt(temp_position[0]**2 + temp_position[1]**2)
-
-#     if z_tip > bottom_z + limit:
-#         if r_tip > radius + limit:
-#             return "sphere_out"
-
-
-
-
-
-
-
-#     INSIDE = "inside"
-#     BORDER = "border"
-#     SPHERE_OUT = "sphere_out"
-#     BOTTOM_OUT = "bottom_out"
-#     SPOT_EDGE_OUT = "spot_edge_out"
-#     POLYGON_MODE = "polygon_mode"
-#     SPOT_BOTTOM = "spot_bottom"
-
-
-#     radius = constants.get("spot_r", constants.get("radius", 0.0))
-#     bottom_z = constants.get("spot_bottom_height", 0.0)
-#     bottom_r = constants.get("spot_bottom_r", 0.0)
-#     limit = constants.get("limit", 1e-9)
-
-#     z_tip = temp_position[2]
-#     r_tip = np.linalg.norm(temp_position)
-#     xy_dist = np.linalg.norm(temp_position[:2])
-
-#     if z_tip > bottom_z + limit:
-#         if r_tip > radius + limit:
-#             return SpotIO.SPHERE_OUT
-#         if r_tip < radius - limit:
-#             return SpotIO.POLYGON_MODE if stick_status > 0 else SpotIO.INSIDE
-#         return SpotIO.BORDER
-
-#     if z_tip < bottom_z - limit:
-#         denom = temp_position[2] - base_position[2]
-#         if abs(denom) < limit:
-#             return SpotIO.SPHERE_OUT
-#         t = (bottom_z - base_position[2]) / denom
-#         if t < 0 or t > 1:
-#             return SpotIO.SPHERE_OUT
-#         intersect_xy = base_position[:2] + t * (temp_position[:2] - base_position[:2])
-#         dist_xy = np.linalg.norm(intersect_xy)
-#         if dist_xy < bottom_r + limit:
-#             return SpotIO.BOTTOM_OUT
-#         return SpotIO.SPHERE_OUT
-
-#     if bottom_z - limit < z_tip < bottom_z + limit:
-#         if xy_dist > bottom_r + limit:
-#             return SpotIO.SPOT_EDGE_OUT
-#         if abs(xy_dist - bottom_r) <= limit:
-#             return SpotIO.BORDER
-#         if xy_dist < bottom_r - limit:
-#             if prev_stat in (SpotIO.SPOT_EDGE_OUT, SpotIO.POLYGON_MODE) or stick_status > 0:
-#                 return SpotIO.POLYGON_MODE
-#             return SpotIO.SPOT_BOTTOM
-
-#     return SpotIO.INSIDE

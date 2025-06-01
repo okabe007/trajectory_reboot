@@ -28,7 +28,7 @@ from tools.derived_constants import get_limits
 from io_status import IOStatus
 from core.simulation_core import SpermSimulation
 
-# from spermsim.CoreMovie import render_3d_movie
+# from spermsim.coremovie import render_3d_movie
 
 
 def rotation_matrix_from_vectors(vec1, vec2):
@@ -2209,11 +2209,11 @@ def _detect_boundary(shape, base_position, temp_position, stick_status, constant
         return status, vertex, temp_position
 
     if shape == "drop":
-        status = IO_check_drop(temp_position, stick_status, constants)
+        status, stick_status = IO_check_drop(candidate, stick_status, self.constants)
         if status == IOStatus.BORDER:
             vec = temp_position - base_position
             temp_position = base_position + vec * 0.99
-            status = IO_check_drop(temp_position, stick_status, constants)
+            status, stick_status = IO_check_drop(candidate, stick_status, self.constants)
         return status, None, temp_position
 
     if shape == "spot":

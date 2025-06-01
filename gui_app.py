@@ -11,7 +11,7 @@ import math
 from core.simulation import SpermSimulation       # ← ここで派生変数計算を呼ぶ
 from tools.plot_utils import plot_2d_trajectories # plot_3d_trajectories
 from tools.derived_constants import calculate_derived_constants
-
+from io_status import IOStatus
 # ルートがsys.pathに含まれていなければ追加
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -418,8 +418,9 @@ class SimApp(tk.Tk):
         )
 
         if "movie" in self.config_data["display_mode"]:
-            from spermsim.CoreMovie import render_3d_movie
-            render_3d_movie(sim.trajectories, sim.constants)
+            from spermsim.coremovie import render_3d_movie
+            render_3d_movie(sim.trajectory, sim.vectors, sim.constants)
+
 
         # --- ⑦ 描画 -----------------------------------------------------
         if "2D" in modes:

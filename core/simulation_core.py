@@ -11,6 +11,7 @@ from tools.io_checks import IO_check_drop
 from tools.derived_constants import _egg_position, calculate_derived_constants
 from tools.plot_utils import plot_2d_trajectories, plot_3d_movie_trajectories
 from tools.geometry import CubeShape, DropShape, SpotShape, CerosShape, _handle_drop_outside
+from io_status import IOStatus
 
 def __init__(self, constants):
     self.constants = constants
@@ -51,11 +52,6 @@ def is_vector_meeting_egg(self, base_position, temp_position, egg_center, gamete
     return False
 
 def run(self, sim_repeat: int, surface_time: float, sample_rate_hz: int):
-    """
-    sim_repeat 回シミュレーションを実行して
-    self.trajectory に各精子の N×3 軌跡配列を格納する。
-    座標・距離の単位は **mm** で統一。
-    """
     print('[DEBUG] SpermSimulation パラメータ:', self.constants)
     shape = self.constants.get('shape', 'cube')
     if shape == 'cube':
@@ -68,98 +64,64 @@ def run(self, sim_repeat: int, surface_time: float, sample_rate_hz: int):
         shape_obj = CerosShape(self.constants)
     else:
         raise ValueError(f'Unsupported shape: {shape}')
+
     number_of_sperm = self.constants['number_of_sperm']
     number_of_steps = self.constants['number_of_steps']
-    trajectory = np.zeros((number_of_sperm, number_of_steps, 3))
     step_len = self.constants['step_length']
+    egg_x, egg_y, egg_z = _egg_position(self.constants)
+    egg_center = np.array([egg_x, egg_y, egg_z])
+    gamete_r = self.constants['gamete_r']
+
     seed_val = self.constants.get('seed_number')
     try:
         if seed_val is not None and str(seed_val).lower() != 'none':
             seed_int = int(seed_val)
-            np.random.seed(seed_int)
             rng = np.random.default_rng(seed_int)
         else:
             rng = np.random.default_rng()
     except Exception:
         rng = np.random.default_rng()
-    egg_x, egg_y, egg_z = _egg_position(self.constants)
-    egg_center = np.array([egg_x, egg_y, egg_z])
-    gamete_r = self.constants['gamete_r']
-    intersection_records = []
+
     self.trajectory = []
-    prev_states = ['inside' for _ in range(number_of_sperm)]
-    bottom_modes = [False for _ in range(number_of_sperm)]
-    stick_statuses = [0 for _ in range(number_of_sperm)]
-    surface_modes = [False for _ in range(number_of_sperm)]
     for rep in range(int(sim_repeat)):
-        for i in range(number_of_sperm):
+        for j in range(number_of_sperm):
             pos = shape_obj.initial_position()
             traj = [pos.copy()]
             vec = rng.normal(size=3)
             vec /= np.linalg.norm(vec) + 1e-12
-            for j in range(number_of_steps):
-                if j > 0:
-                    vec = _perturb_direction(vec, self.constants['deviation'], rng)
+
+            stick_status = 0
+            prev_status = "inside"
+            for i in range(1, number_of_steps):
+                vec = _perturb_direction(vec, self.constants['deviation'], rng)
                 candidate = pos + vec * step_len
-                if shape == 'drop':
-                    status = IO_check_drop(candidate, stick_status, self.constants)
+
+                if shape == "drop":
+                    status, stick_status = IO_check_drop(candidate, stick_status, self.constants)
                     if status == IOStatus.POLYGON_MODE:
-                        stick_status = self.constants['surface_time'] / self.constants['sample_rate_hz']
-                        normal = pos / (np.linalg.norm(pos) + 1e-12)
-                        vec = vec - np.dot(vec, normal) * normal
-                        vec /= np.linalg.norm(vec) + 1e-12
-                    else:
-                        stick_status = max(0, stick_status - 1)
+                        candidate, vec, stick_status, status = self.drop_polygon_move(pos, vec, stick_status, self.constants)
+
+                elif shape == "spot":
+                    status, stick_status = IO_check_spot(pos, candidate, self.constants, prev_status, stick_status)
+                    prev_status = status
+
+                elif shape == "cube":
+                    status, stick_status = IO_check_cube(candidate, self.constants)
+
+                elif shape == "ceros":
+                    status, stick_status = IOStatus.INSIDE
+
+                else:
+                    raise ValueError(f"Unknown shape: {shape}")
+
+                traj.append(candidate.copy())
                 pos = candidate
-                trajectory[i, j] = pos
-                if shape == 'spot' and bottom_modes[i] and (stick_statuses[i] > 0):
-                    vec[2] = 0.0
-                    vec /= np.linalg.norm(vec) + 1e-12
-                candidate = pos + vec * step_len
-                if j > 0 and self.is_vector_meeting_egg(traj[-1], candidate, egg_center, gamete_r):
-                    intersection_records.append((i, j))
-                if shape == 'drop':
-                    base_pos = pos
-                    move_len = step_len
-                    status = _io_check_drop(candidate, self.constants, base_pos)
-                    if status == 'outside':
-                        vec, base_pos, stick_statuses[i] = _handle_drop_outside(vec, base_pos, self.constants, surface_time, sample_rate_hz, stick_statuses[i])
-                        if stick_statuses[i] > 0:
-                            surface_modes[i] = True
-                        candidate = base_pos + vec * move_len
-                elif shape == 'spot':
-                    prev = prev_states[i]
-                    candidate, status, bottom_hit = _io_check_spot(pos, candidate, self.constants, prev, stick_statuses[i])
-                    prev_states[i] = status
-                    if bottom_hit or status in [SpotIO.SPOT_BOTTOM, SpotIO.POLYGON_MODE]:
-                        bottom_modes[i] = True
-                        if stick_statuses[i] == 0:
-                            stick_statuses[i] = int(self.constants['surface_time'] / self.constants['sample_rate_hz'])
-                    vec = (candidate - pos) / step_len
-                disp_len = np.linalg.norm(candidate - pos)
-                max_len = step_len
-                if disp_len > max_len * 1.05:
-                    print(f'[ERROR] displacement {disp_len} mm exceeds step_length {max_len} mm at rep={rep}, sperm={i}, step={j}')
-                    print(f'pos={pos}, candidate={candidate}, vec={vec}')
-                    raise RuntimeError('step length exceeded')
-                pos = candidate
-                traj.append(pos.copy())
-                if shape == 'spot':
-                    if bottom_modes[i]:
-                        if stick_statuses[i] > 0:
-                            stick_statuses[i] -= 1
-                        if stick_statuses[i] == 0:
-                            bottom_modes[i] = False
-                if shape == 'drop' and surface_modes[i]:
-                    if stick_statuses[i] > 0:
-                        stick_statuses[i] -= 1
-                    if stick_statuses[i] == 0:
-                        surface_modes[i] = False
-                if rep == 0 and i == 0 and (j == 0):
-                    print(f'[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec * step_len):.5f}')
+
             self.trajectory.append(np.vstack(traj))
+
     self.trajectories = np.array(self.trajectory)
-    print(f'[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, step_len={step_len} mm')
+    print(f"[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, step_len={step_len:.4f} mm")
+
 import matplotlib.pyplot as plt
 
 def plot_trajectories(self, max_sperm=5, save_path=None):
@@ -339,8 +301,20 @@ def _perturb_direction(prev: np.ndarray, deviation: float, rng: np.random.Genera
 
 
 
-class SpotIO:
-    """Status constants for spot geometry."""
+# core/simulation_core.py または tools/io_status.py などに入れる
+
+from enum import Enum
+
+class SpotIO(Enum):
+    INSIDE = "inside"
+    BORDER = "border"
+    SPHERE_OUT = "sphere_out"
+    BOTTOM_OUT = "bottom_out"
+    SPOT_EDGE_OUT = "spot_edge_out"
+    POLYGON_MODE = "polygon_mode"
+    SPOT_BOTTOM = "spot_bottom"
+    REFLECT = "reflect"     # ← spot の特殊反射（必要なら）
+    STICK = "stick"         # ← spot の貼り付き
 
 
 
@@ -393,117 +367,7 @@ class SpermSimulation:
             return True
         return False
 
-    def run(self, sim_repeat: int, surface_time: float, sample_rate_hz: int):
-        """
-        sim_repeat 回シミュレーションを実行して
-        self.trajectory に各精子の N×3 軌跡配列を格納する。
-        座標・距離の単位は **mm** で統一。
-        """
-        print('[DEBUG] SpermSimulation パラメータ:', self.constants)
-        shape = self.constants.get('shape', 'cube')
-        if shape == 'cube':
-            shape_obj = CubeShape(self.constants)
-        elif shape == 'spot':
-            shape_obj = SpotShape(self.constants)
-        elif shape == 'drop':
-            shape_obj = DropShape(self.constants)
-        elif shape == 'ceros':
-            shape_obj = CerosShape(self.constants)
-        else:
-            raise ValueError(f'Unsupported shape: {shape}')
-        number_of_sperm = self.constants['number_of_sperm']
-        number_of_steps = self.constants['number_of_steps']
-        trajectory = np.zeros((number_of_sperm, number_of_steps, 3))
-        step_len = self.constants['step_length']
-        seed_val = self.constants.get('seed_number')
-        try:
-            if seed_val is not None and str(seed_val).lower() != 'none':
-                seed_int = int(seed_val)
-                np.random.seed(seed_int)
-                rng = np.random.default_rng(seed_int)
-            else:
-                rng = np.random.default_rng()
-        except Exception:
-            rng = np.random.default_rng()
-        egg_x, egg_y, egg_z = _egg_position(self.constants)
-        egg_center = np.array([egg_x, egg_y, egg_z])
-        gamete_r = self.constants['gamete_r']
-        intersection_records = []
-        self.trajectory = []
-        prev_states = ['inside' for _ in range(number_of_sperm)]
-        bottom_modes = [False for _ in range(number_of_sperm)]
-        stick_statuses = [0 for _ in range(number_of_sperm)]
-        surface_modes = [False for _ in range(number_of_sperm)]
-        for rep in range(int(sim_repeat)):
-            for i in range(number_of_sperm):
-                pos = shape_obj.initial_position()
-                traj = [pos.copy()]
-                vec = rng.normal(size=3)
-                vec /= np.linalg.norm(vec) + 1e-12
-                for j in range(number_of_steps):
-                    if j > 0:
-                        vec = _perturb_direction(vec, self.constants['deviation'], rng)
-                    candidate = pos + vec * step_len
-                    if shape == 'drop':
-                        status = IO_check_drop(candidate, stick_status, self.constants)
-                        if status == IOStatus.POLYGON_MODE:
-                            stick_status = self.constants['surface_time'] / self.constants['sample_rate_hz']
-                            normal = pos / (np.linalg.norm(pos) + 1e-12)
-                            vec = vec - np.dot(vec, normal) * normal
-                            vec /= np.linalg.norm(vec) + 1e-12
-                        else:
-                            stick_status = max(0, stick_status - 1)
-                    pos = candidate
-                    trajectory[i, j] = pos
-                    if shape == 'spot' and bottom_modes[i] and (stick_statuses[i] > 0):
-                        vec[2] = 0.0
-                        vec /= np.linalg.norm(vec) + 1e-12
-                    candidate = pos + vec * step_len
-                    if j > 0 and self.is_vector_meeting_egg(traj[-1], candidate, egg_center, gamete_r):
-                        intersection_records.append((i, j))
-                    if shape == 'drop':
-                        base_pos = pos
-                        move_len = step_len
-                        status = _io_check_drop(candidate, self.constants, base_pos)
-                        if status == 'outside':
-                            vec, base_pos, stick_statuses[i] = _handle_drop_outside(vec, base_pos, self.constants, surface_time, sample_rate_hz, stick_statuses[i])
-                            if stick_statuses[i] > 0:
-                                surface_modes[i] = True
-                            candidate = base_pos + vec * move_len
-                    elif shape == 'spot':
-                        prev = prev_states[i]
-                        candidate, status, bottom_hit = _io_check_spot(pos, candidate, self.constants, prev, stick_statuses[i])
-                        prev_states[i] = status
-                        if bottom_hit or status in [SpotIO.SPOT_BOTTOM, SpotIO.POLYGON_MODE]:
-                            bottom_modes[i] = True
-                            if stick_statuses[i] == 0:
-                                stick_statuses[i] = int(self.constants['surface_time'] / self.constants['sample_rate_hz'])
-                        vec = (candidate - pos) / step_len
-                    disp_len = np.linalg.norm(candidate - pos)
-                    max_len = step_len
-                    if disp_len > max_len * 1.05:
-                        print(f'[ERROR] displacement {disp_len} mm exceeds step_length {max_len} mm at rep={rep}, sperm={i}, step={j}')
-                        print(f'pos={pos}, candidate={candidate}, vec={vec}')
-                        raise RuntimeError('step length exceeded')
-                    pos = candidate
-                    traj.append(pos.copy())
-                    if shape == 'spot':
-                        if bottom_modes[i]:
-                            if stick_statuses[i] > 0:
-                                stick_statuses[i] -= 1
-                            if stick_statuses[i] == 0:
-                                bottom_modes[i] = False
-                    if shape == 'drop' and surface_modes[i]:
-                        if stick_statuses[i] > 0:
-                            stick_statuses[i] -= 1
-                        if stick_statuses[i] == 0:
-                            surface_modes[i] = False
-                    if rep == 0 and i == 0 and (j == 0):
-                        print(f'[DEBUG] 1step_disp(mm) = {np.linalg.norm(vec * step_len):.5f}')
-                self.trajectory.append(np.vstack(traj))
-        self.trajectories = np.array(self.trajectory)
-        print(f'[DEBUG] run完了: sperm={len(self.trajectory)}, steps={number_of_steps}, step_len={step_len} mm')
-    import matplotlib.pyplot as plt
+    
 
     def plot_trajectories(self, max_sperm=5, save_path=None):
         """

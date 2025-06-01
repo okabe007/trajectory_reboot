@@ -400,8 +400,9 @@ class SimApp(tk.Tk):
         )
 
         if "movie" in self.config_data["display_mode"]:
-            from spermsim.CoreMovie import render_3d_movie
-            render_3d_movie(sim.trajectories, sim.constants)
+            from spermsim.oremovie import render_3d_movie
+            render_3d_movie(sim.trajectory, sim.vectors, sim.constants)
+
 
         # --- ⑦ 描画 -----------------------------------------------------
         if "2D" in modes:

@@ -174,12 +174,14 @@ def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=
 # =======================
 # 🟨 3D用の補助描画関数
 # =======================
-def draw_egg_3d(ax: plt.Axes, constants: dict) -> None:
-    """Convenience wrapper for :func:`draw_egg` using ``constants``."""
+def draw_egg_3d(ax, egg_pos, radius, *, color="yellow", alpha=0.6):
+    """3Dの卵子球を描画する関数（egg_pos, radius を外部から渡す構造）"""
+    u, v = np.mgrid[0:2 * np.pi:20j, 0:np.pi:10j]
+    x = radius * np.cos(u) * np.sin(v) + egg_pos[0]
+    y = radius * np.sin(u) * np.sin(v) + egg_pos[1]
+    z = radius * np.cos(v) + egg_pos[2]
+    ax.plot_surface(x, y, z, color=color, alpha=alpha, edgecolor="none")
 
-    egg_pos = _egg_position(constants)
-    r = constants.get("gamete_r", 0.15)
-    draw_egg(ax, egg_pos, r)
 
 
 def draw_motion_area_3d(ax: plt.Axes, constants: dict) -> None:
