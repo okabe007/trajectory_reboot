@@ -10,6 +10,8 @@ from typing import Tuple
 from numpy import linalg as LA
 
 
+from io_status import IOStatus
+
 from tools.derived_constants import _egg_position, calculate_derived_constants
 from tools.plot_utils import plot_2d_trajectories, plot_3d_movie_trajectories
 
@@ -302,6 +304,94 @@ class SpermSimulation:
 
     
         # ------------------------------------------------------------------
+    def drop_polygon_move(self, base_position, last_vec, stick_status, constants):
+        """
+        drop球面に張り付いた状態で這うように動く。
+        stick_statusに応じて deviation の自由度を段階的に変化させる：
+            - stick_status > 1  : 球面上のポリゴン面内のみを這う
+            - stick_status == 1: ポリゴン面 + 球体内側方向にやや浮かせる
+            - stick_status == 0: 自由運動（POLYGON_MODE終了）
+
+        Parameters:
+            base_position: 現在の位置（球面上）
+            last_vec: 前回の進行ベクトル
+            stick_status: 現在の貼り付き残りステップ数（実数）
+            constants: 定数辞書
+
+        Returns:
+            new_temp_position: 次の位置
+            new_last_vec: 次のベクトル
+            new_stick_status: 更新された貼り付き時間
+            next_state: IOStatus（POLYGON_MODEまたはINSIDE）
+        """
+
+        step_len = constants['step_length']
+        dev_mag = constants['deviation']
+        limit = constants['limit']
+
+        # --- 法線ベクトル（球中心からの放射方向） ---
+        normal = base_position / (LA.norm(base_position) + 1e-12)
+
+        # --- ポリゴン面ベクトルの初期化（法線に直交する方向） ---
+        vec_norm = LA.norm(last_vec)
+        if vec_norm < limit:
+            # 進行方向が小さすぎるとき → 仮の接線を定義
+            if abs(normal[0]) < 0.9:
+                tangent = np.cross(normal, [1.0, 0.0, 0.0])
+            else:
+                tangent = np.cross(normal, [0.0, 1.0, 0.0])
+            v_base = tangent / (LA.norm(tangent) + 1e-12)
+        else:
+            # 接線方向に正規化
+            v_base = last_vec / vec_norm
+            v_base = v_base - np.dot(v_base, normal) * normal
+            base_norm = LA.norm(v_base)
+            if base_norm < limit:
+                if abs(normal[0]) < 0.9:
+                    tangent = np.cross(normal, [1.0, 0.0, 0.0])
+                else:
+                    tangent = np.cross(normal, [0.0, 1.0, 0.0])
+                v_base = tangent / (LA.norm(tangent) + 1e-12)
+            else:
+                v_base /= base_norm
+
+        # --- ポリゴン面（normalに直交）上の2軸 (u, v) ---
+        u = v_base
+        v = np.cross(normal, u)
+        v /= LA.norm(v) + 1e-12
+
+        # --- stick_status に応じた deviation の生成 ---
+        if stick_status > 1:
+            # ポリゴン面内で左右にぶれるだけ
+            theta = np.random.uniform(-np.pi, np.pi)
+            deviation_vec = dev_mag * (np.cos(theta) * u + np.sin(theta) * v)
+
+        elif stick_status == 1:
+            # 最後だけ球面内方向にもぶれられるように（半コーン）
+            theta = np.random.uniform(-np.pi / 2, np.pi / 2)
+            deviation_vec = dev_mag * (np.cos(theta) * normal + np.sin(theta) * v_base)
+
+        else:
+            # POLYGON_MODE 終了 → 自由運動
+            rand_vec = np.random.normal(0, 1, 3)
+            rand_vec /= LA.norm(rand_vec) + 1e-12
+            deviation_vec = dev_mag * rand_vec
+
+        # --- 新しい進行方向ベクトル ---
+        final_dir = v_base + deviation_vec
+        final_dir /= LA.norm(final_dir) + 1e-12
+
+        new_last_vec = final_dir * step_len
+        new_temp_position = base_position + new_last_vec
+
+        # --- 貼り付き残り時間の更新と状態切り替え ---
+        new_stick_status = stick_status - 1 if stick_status > 0 else 0
+        if new_stick_status <= 0:
+            next_state = IOStatus.INSIDE
+        else:
+            next_state = IOStatus.POLYGON_MODE
+
+        return new_temp_position, new_last_vec, new_stick_status, next_state
 
     def is_vector_meeting_egg(self, base_position, temp_position, egg_center, gamete_r):
         vector = temp_position - base_position
@@ -407,6 +497,9 @@ class SpermSimulation:
                 # === ステータスごとの挙動 ===
                 if status in [IOStatus.INSIDE, IOStatus.INSIDE]:
                     pos = candidate
+                elif status == IOStatus.POLYGON_MODE:
+                    candidate, vec, stick_status, status = self.drop_polygon_move(pos, vec, stick_status, self.constants)
+
 
                 elif status in [IOStatus.REFLECT, SpotIO.REFLECT]:
                     vec *= -1
