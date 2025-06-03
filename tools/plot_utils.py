@@ -1,22 +1,165 @@
-import os
-import math
+
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import patches
-from matplotlib.animation import FuncAnimation
-from datetime import datetime
-from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.patches import Circle
 from tools.derived_constants import get_limits
-from tools.derived_constants import _egg_position  # 必要ならtoolsに移動しておく
-import sys
-print("[DEBUG] sys.path =", sys.path)
-# =======================
-# 🔧 共通ヘルパー関数
-# =======================
-def _make_save_path(prefix="trajectory", ext="png", dir="Figs_and_Movies"):
-    os.makedirs(dir, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{dir}/{prefix}_{timestamp}.{ext}"
+
+def plot_2d_trajectories(trajs_um, constants, save_path=None, show=True, max_sperm=None):
+    """
+    ● 前提：
+        - trajs_um : μm 単位 (np.ndarray) の精子軌跡データ
+          → 関数内で一度だけ μm→mm に変換します。
+        - constants は calculate_derived_constants(raw_constants) が返した辞書で、
+          以下のキーがすべて“mm 単位”になっています：
+            * constants["shape"]
+            * constants["drop_r"]
+            * constants["spot_r"], constants["spot_bottom_r"], constants["spot_bottom_height"]
+            * constants["gamete_r"], constants["egg_center"]（array([x_mm, y_mm, z_mm])）
+            * get_limits(constants) が返す (x_min, x_max, y_min, y_max, z_min, z_max)
+    """
+
+    # ① get_limits で “mm 単位” の描画範囲を取得
+    x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
+
+    # ② trajs_um が μm 単位なら mm 単位へ変換
+    trajs_mm = trajs_um.astype(float) / 1000.0
+
+    # ③ サブプロット作成 (XY, XZ, YZ)
+    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+
+    # ④ 背景 (drop or spot) を mm 単位で描画
+    shape = constants.get('shape', 'cube').lower()
+
+    if shape == "drop":
+        r = constants["drop_r"]  # mm
+        axs[0].add_patch(Circle((0.0, 0.0), r, color="pink", alpha=0.3))  # XY
+        axs[1].add_patch(Circle((0.0, 0.0), r, color="pink", alpha=0.3))  # XZ
+        axs[2].add_patch(Circle((0.0, 0.0), r, color="pink", alpha=0.3))  # YZ
+
+    elif shape == "spot":
+        R   = constants["spot_r"]              # mm
+        b_r = constants["spot_bottom_r"]       # mm
+        b_h = constants["spot_bottom_height"]  # mm
+
+        # XY: 底面円 (mm)
+        axs[0].add_patch(Circle((0.0, 0.0), b_r, color="pink", alpha=0.3))
+
+        # XZ／YZ: 球面断面 (mm)
+        x_vals = np.linspace(-b_r, b_r, 200)
+        z_vals = np.sqrt(np.clip(R**2 - x_vals**2, 0.0, None))
+        axs[1].fill_between(x_vals, b_h, z_vals, color="pink", alpha=0.3)  # XZ
+        axs[2].fill_between(x_vals, b_h, z_vals, color="pink", alpha=0.3)  # YZ
+
+    else:
+        # cube などその他形状は背景を描かない
+        pass
+
+    # ⑤ 卵子を mm 単位で描画
+    egg_center = constants["egg_center"]  # array([x_mm, y_mm, z_mm])
+    egg_r      = constants["gamete_r"]   # mm
+
+    axs[0].add_patch(
+        Circle(
+            (egg_center[0], egg_center[1]),  # XY 中心 (mm)
+            egg_r,
+            facecolor="yellow", alpha=0.6,
+            edgecolor="gray", linewidth=1.0
+        )
+    )
+    axs[1].add_patch(
+        Circle(
+            (egg_center[0], egg_center[2]),  # XZ 中心 (mm)
+            egg_r,
+            facecolor="yellow", alpha=0.6,
+            edgecolor="gray", linewidth=1.0
+        )
+    )
+    axs[2].add_patch(
+        Circle(
+            (egg_center[1], egg_center[2]),  # YZ 中心 (mm)
+            egg_r,
+            facecolor="yellow", alpha=0.6,
+            edgecolor="gray", linewidth=1.0
+        )
+    )
+
+    # ⑥ 精子軌跡を mm 単位で描画
+    if max_sperm is None:
+        max_sperm = trajs_mm.shape[0]
+
+    for s in range(min(max_sperm, trajs_mm.shape[0])):
+        axs[0].plot(trajs_mm[s, :, 0], trajs_mm[s, :, 1], linewidth=0.6)  # XY
+        axs[1].plot(trajs_mm[s, :, 0], trajs_mm[s, :, 2], linewidth=0.6)  # XZ
+        axs[2].plot(trajs_mm[s, :, 1], trajs_mm[s, :, 2], linewidth=0.6)  # YZ
+
+    # ⑦ 軸範囲とラベルを mm 単位で設定
+    axs[0].set_title("XY (mm)")
+    axs[1].set_title("XZ (mm)")
+    axs[2].set_title("YZ (mm)")
+
+    _set_common_2d_ax(
+        axs[0],
+        (x_min, x_max),
+        (y_min, y_max),
+        "X (mm)",
+        "Y (mm)"
+    )
+    _set_common_2d_ax(
+        axs[1],
+        (x_min, x_max),
+        (z_min, z_max),
+        "X (mm)",
+        "Z (mm)"
+    )
+    _set_common_2d_ax(
+        axs[2],
+        (y_min, y_max),
+        (z_min, z_max),
+        "Y (mm)",
+        "Z (mm)"
+    )
+
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path)
+    if show:
+        plt.show()
+
+
+def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel):
+    """
+    軸範囲とラベルを設定するヘルパー関数
+    xlim   : (xmin, xmax) in mm
+    ylim   : (ymin, ymax) in mm
+    xlabel : 例 "X (mm)"
+    ylabel : 例 "Y (mm)"
+    """
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_aspect('equal', adjustable='box')
+    ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.5)
+
+
+
+def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel):
+    """
+    軸範囲とラベルを設定するヘルパー関数
+    xlim   : (xmin, xmax) in mm
+    ylim   : (ymin, ymax) in mm
+    xlabel : 例 "X (mm)"
+    ylabel : 例 "Y (mm)"
+    """
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_aspect('equal', adjustable='box')
+    ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.5)
+
+
+
 def draw_medium(ax, constants: dict):
     shape = constants.get("shape", "cube").lower()
 
@@ -57,123 +200,15 @@ def draw_medium(ax, constants: dict):
         ):
             ax.plot([s[0], e[0]], [s[1], e[1]], [s[2], e[2]], color="gray", alpha=0.5)
 
+
 def _set_common_2d_ax(ax, xlim, ylim, xlabel, ylabel):
-    ax.set_xlim(*xlim)
-    ax.set_ylim(*ylim)
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.set_aspect('equal', adjustable='box')  # ✅ 数値の増分 = 実長さに一致
+    ax.set_aspect('equal', adjustable='box')
+    ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.5)
 
-def draw_egg(ax, pos, radius, *, color="yellow", alpha=0.6):
-    """Draw the egg as a sphere.
-
-    Parameters
-    ----------
-    ax : matplotlib axes
-        3D axes object to draw on.
-    pos : tuple[float, float, float]
-        (x, y, z) position of the egg centre.
-    radius : float
-        Radius of the egg.
-    color : str, optional
-        Surface colour (default ``"yellow"``).
-    alpha : float, optional
-        Surface transparency (default ``0.6``).
-    """
-
-    u, v = np.mgrid[0 : 2 * np.pi : 20j, 0 : np.pi : 10j]
-    x = radius * np.cos(u) * np.sin(v) + pos[0]
-    y = radius * np.sin(u) * np.sin(v) + pos[1]
-    z = radius * np.cos(v) + pos[2]
-    ax.plot_surface(x, y, z, color=color, alpha=alpha, edgecolor="none")
-# =======================
-# 🟨 2D軌跡プロット
-# =======================
-from matplotlib.patches import Circle
-
-def plot_2d_trajectories(trajs, constants, save_path=None, show=True, max_sperm=None):
-    from tools.derived_constants import get_limits, _egg_position
-
-    x_min, x_max, y_min, y_max, z_min, z_max = get_limits(constants)
-    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
-
-    shape = constants.get('shape', 'cube').lower()
-    drop_r = float(constants.get('drop_r', 0.0))
-    spot_r = float(constants.get('spot_r', 0.0))
-    egg_r = float(constants.get("gamete_r", 0.05))
-    egg_pos = _egg_position(constants)
-
-    if max_sperm is None:
-        max_sperm = trajs.shape[0]
-
-    # 軌跡描画
-    for s in range(min(max_sperm, trajs.shape[0])):
-        axs[0].plot(trajs[s, :, 0], trajs[s, :, 1], linewidth=0.6)  # XY
-        axs[1].plot(trajs[s, :, 0], trajs[s, :, 2], linewidth=0.6)  # XZ
-        axs[2].plot(trajs[s, :, 1], trajs[s, :, 2], linewidth=0.6)  # YZ
-
-
-    # 背景（メディウム）描画
-    if shape == "drop":
-        medium_r = drop_r
-        center = (0.0, 0.0)
-        axs[0].add_patch(Circle(center, medium_r, color="pink", alpha=0.3))  # XY
-        axs[1].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # XZ
-        axs[2].add_patch(Circle((0, 0), medium_r, color="pink", alpha=0.3))  # YZ
-
-    elif shape == "spot":
-        R = spot_r
-        bottom_r = constants.get("spot_bottom_r", R)
-        bottom_h = constants.get("spot_bottom_height", 0.0)
-
-        # XY 平面: 底面半径で塗りつぶす
-        axs[0].add_patch(Circle((0, 0), bottom_r, color="pink", alpha=0.3))
-
-        # XZ / YZ 平面: 球面断面を塗りつぶし
-        x = np.linspace(-bottom_r, bottom_r, 200)
-        z = np.sqrt(np.clip(R ** 2 - x**2, 0.0, None))
-        axs[1].fill_between(x, bottom_h, z, color="pink", alpha=0.3)
-        axs[2].fill_between(x, bottom_h, z, color="pink", alpha=0.3)
-
-    # 卵子描画（円）
-    egg_kw = dict(color="yellow", alpha=0.6, edgecolor="gray", linewidth=0.5)
-    axs[0].add_patch(Circle(
-        (egg_pos[0], egg_pos[1]), egg_r,
-        facecolor="yellow", alpha=0.6,
-        edgecolor="gray", linewidth=1.0
-    ))
-
-    axs[1].add_patch(Circle(
-        (egg_pos[0], egg_pos[2]), egg_r,
-        facecolor="yellow", alpha=0.6,
-        edgecolor="gray", linewidth=1.0
-    ))
-
-    axs[2].add_patch(Circle(
-        (egg_pos[1], egg_pos[2]), egg_r,
-        facecolor="yellow", alpha=0.6,
-        edgecolor="gray", linewidth=1.0
-    ))
-
-    # 軸とアスペクト比
-    axs[0].set_title("XY")
-    axs[1].set_title("XZ")
-    axs[2].set_title("YZ")
-
-    _set_common_2d_ax(axs[0], (x_min, x_max), (y_min, y_max), "X", "Y")
-    _set_common_2d_ax(axs[1], (x_min, x_max), (z_min, z_max), "X", "Z")
-    _set_common_2d_ax(axs[2], (y_min, y_max), (z_min, z_max), "Y", "Z")
-
-    fig.tight_layout()
-    if save_path:
-        fig.savefig(save_path)
-    if show:
-        plt.show()
-
-
-# =======================
-# 🟨 3D用の補助描画関数
-# =======================
 def draw_egg_3d(ax, egg_pos, radius, *, color="yellow", alpha=0.6):
     """3Dの卵子球を描画する関数（egg_pos, radius を外部から渡す構造）"""
     u, v = np.mgrid[0:2 * np.pi:20j, 0:np.pi:10j]
@@ -183,49 +218,6 @@ def draw_egg_3d(ax, egg_pos, radius, *, color="yellow", alpha=0.6):
     ax.plot_surface(x, y, z, color=color, alpha=alpha, edgecolor="none")
 
 
-
-def draw_motion_area_3d(ax: plt.Axes, constants: dict) -> None:
-    shape = constants.get("shape", "cube").lower()
-
-    if shape == "spot":
-        R = constants.get("spot_R", 1.0)
-        angle_deg = constants.get("spot_angle", 60.0)
-        theta = np.linspace(0, np.deg2rad(angle_deg), 30)
-        phi = np.linspace(0, 2 * np.pi, 30)
-        theta, phi = np.meshgrid(theta, phi)
-        x = R * np.sin(theta) * np.cos(phi)
-        y = R * np.sin(theta) * np.sin(phi)
-        z = R * np.cos(theta)
-        ax.plot_surface(x, y, z, color="red", alpha=0.3, edgecolor="none")
-
-    elif shape == "drop":
-        R = constants.get("drop_r", 1.0)
-        u = np.linspace(0, 2 * np.pi, 30)
-        v = np.linspace(0, np.pi / 2, 30)
-        x = R * np.outer(np.cos(u), np.sin(v))
-        y = R * np.outer(np.sin(u), np.sin(v))
-        z = R * np.outer(np.ones_like(u), np.cos(v))
-        ax.plot_surface(x, y, z, color="blue", alpha=0.3, edgecolor="none")
-
-    elif shape == "cube":
-        x_min, x_max = constants["x_min"], constants["x_max"]
-        y_min, y_max = constants["y_min"], constants["y_max"]
-        z_min, z_max = constants["z_min"], constants["z_max"]
-        for s, e in zip(
-            [(x_min, y_min, z_min), (x_max, y_min, z_min), (x_max, y_max, z_min),
-             (x_min, y_max, z_min), (x_min, y_min, z_max), (x_max, y_min, z_max),
-             (x_max, y_max, z_max), (x_min, y_max, z_max)],
-            [(x_max, y_min, z_min), (x_max, y_max, z_min), (x_min, y_max, z_min),
-             (x_min, y_min, z_max), (x_max, y_min, z_max), (x_max, y_max, z_max),
-             (x_min, y_max, z_max), (x_min, y_min, z_max)]
-        ):
-            ax.plot([s[0], e[0]], [s[1], e[1]], [s[2], e[2]], color="gray", alpha=0.2)
-
-
-# =======================
-# 🟨 3Dムービー描画
-# =======================
-from tools.derived_constants import _egg_position
 
 def plot_3d_movie_trajectories(trajs: np.ndarray, constants: dict, save_path=None, show=True, intersection_records=None):
     """3D軌跡ムービーの作成（卵子とメディウムも毎フレーム描画）"""

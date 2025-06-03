@@ -512,10 +512,9 @@ class SpermSimulation:
                 elif status in [IOStatus.BORDER, IOStatus.BOTTOM_OUT, IOStatus.SPOT_EDGE_OUT]:
                     pass  # 停止や跳ね返り処理なし（その場維持）
 
-
-                else:
+                elif status in [IOStatus.INSIDE, IOStatus.POLYGON_MODE]:
+                    pass  # 正常なため何もしなくて良い
                     print(f"[WARNING] Unexpected status: {status}")
-                    pass
 
                 self.trajectory[j, i] = pos
                 self.vectors[j, i] = vec

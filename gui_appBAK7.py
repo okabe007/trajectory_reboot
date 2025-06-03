@@ -1,26 +1,17 @@
-
 import os
+import sys
+project_root = os.path.abspath(os.path.dirname(__file__))
+sys.path.append(project_root)
+
 import tkinter as tk
 from tkinter import ttk
 import configparser
 import numpy as np
 import math
-from core.simulation import SpermSimulation       # ← ここで派生変数計算を呼ぶ
-from tools.plot_utils import plot_2d_trajectories # plot_3d_trajectories
+from controller.simulation_manager import SimulationManager       # ← ここで派生変数計算を呼ぶ
+from tools.plot_utils import plot_trajectories # plot_3d_trajectories
 from tools.derived_constants import calculate_derived_constants
-import sys
-from tools.movie_utils import render_3d_movie
-import sys
-from pathlib import Path
-
-# プロジェクトのルートパスを追加
-ROOT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT_DIR))
-
-
-# プロジェクトのルートパスを取得（このファイルの親フォルダ）
-project_root = os.path.abspath(os.path.dirname(__file__))
-
+from io_status import IOStatus
 # ルートがsys.pathに含まれていなければ追加
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -138,21 +129,21 @@ def load_config() -> dict:
 # ---------------------------------------------------------------------------
 # Tkinter GUI クラス
 # ---------------------------------------------------------------------------
-
 class SimApp(tk.Tk):
     def __init__(self) -> None:
-        
         super().__init__()
         self.title("Sperm Simulation GUI")
         self.geometry("780x900")
+
         self.config_data = load_config()  # .ini → dict
         self.tk_vars: dict[str, tk.Variable] = {}  # Param ↔ Tk 変数
         self.save_var = tk.BooleanVar()
         self.save_var.set(True)
+        ttk.Checkbutton(self, text='結果を保存する', variable=self.save_var).pack(anchor='w', padx=10, pady=5)
+
         # スクロールキャンバス
         canvas = tk.Canvas(self)
         vbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
-        
         self.scroll_frame = ttk.Frame(canvas)
         canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
         canvas.configure(yscrollcommand=vbar.set)
@@ -166,9 +157,7 @@ class SimApp(tk.Tk):
         # 各ウィジェットを配置
         self._create_widgets(self.scroll_frame)
         self._restore_from_config()  # 値を復元
-        ttk.Checkbutton
 
- 
     # ---------------------------------------------------------------------
     # ウィジェット生成
     # ---------------------------------------------------------------------
@@ -204,10 +193,23 @@ class SimApp(tk.Tk):
         # --- sperm_conc --------------------------------------------------
         self.tk_vars["sperm_conc"] = tk.DoubleVar()
         ttk.Label(parent, text="sperm_conc (cells/mL):").pack(anchor="w", padx=10, pady=(10, 0))
-        f_conc = ttk.Frame(parent); f_conc.pack(anchor="w", padx=30)
+        f_conc = ttk.Frame(parent)
+        f_conc.pack(anchor="w", padx=30)
+
         for v in [1e3, 3.16e3, 1e4, 3.162e4, 1e5]:
-            ttk.Radiobutton(f_conc, text=f"{int(v):,}", variable=self.tk_vars["sperm_conc"],
-                            value=float(v)).pack(side="left")
+            ttk.Radiobutton(
+                f_conc,
+                text=f"{int(v):,}",
+                variable=self.tk_vars["sperm_conc"],
+                value=v
+            ).pack(side="left", padx=2)
+
+        # --- save_var チェックボックス -----------------------------------
+        self.save_var = tk.BooleanVar()
+        self.save_var.set(True)
+        ttk.Checkbutton(parent, text='結果を保存する', variable=self.save_var).pack(anchor='w', padx=10, pady=5)
+
+
 
         # --- vsl ---------------------------------------------------------
         self.tk_vars["vsl"] = tk.DoubleVar()
@@ -282,33 +284,16 @@ class SimApp(tk.Tk):
                             value=int(v)).pack(side="left")
 
         # --- display_mode ラジオボタン ------------------------------
-        # ini ファイルからの正しい読み込み方法
-        display_mode = self.config_data.get('display_mode', '2D')
-
-        # 万が一、タプルになっている場合を考えて厳密に処理
-        if isinstance(display_mode, tuple):
-            display_mode = display_mode[0]
-        elif isinstance(display_mode, list):
-            display_mode = display_mode[0]
-
-        # 念のために文字列変換と空白削除
-        display_mode = str(display_mode).strip().replace('(', '').replace(')', '').replace(',', '').replace("'", "").replace('"', '')
-
-        self.tk_vars["display_mode"] = tk.StringVar(value=display_mode)
-
+        self.tk_vars["display_mode"] = tk.StringVar()
         ttk.Label(parent, text="display_mode:").pack(anchor="w", padx=10, pady=(10, 0))
-        f_disp = ttk.Frame(parent)
-        f_disp.pack(anchor="w", padx=30)
-
+        f_disp = ttk.Frame(parent); f_disp.pack(anchor="w", padx=30)
         for v in ["2D", "3D", "movie"]:
-            ttk.Radiobutton(
-                f_disp, text=v, variable=self.tk_vars["display_mode"], value=v
-            ).pack(side="left")
+            ttk.Radiobutton(f_disp, text=v, variable=self.tk_vars["display_mode"], value=v
+                            ).pack(side="left")
 
-        # 最終確認のプリント文
-        print(f"最終修正後の表示モード: {self.tk_vars['display_mode'].get()}")
-
-
+        self.save_var = tk.BooleanVar()
+        self.save_var.set(True)
+        ttk.Checkbutton(parent, text="save results", variable=self.save_var).pack(anchor="w", padx=10, pady=5)
 
         # --- 実行ボタン --------------------------------------------------
         ttk.Button(parent, text="Save settings and run simulation",
@@ -331,44 +316,119 @@ class SimApp(tk.Tk):
         # ---------------------------------------------------------------------
     # 保存＆シミュレーション実行  ← ★ここを全面差し替え★
     # ---------------------------------------------------------------------
-    def _on_save(self):
-        constants = {key: var.get() for key, var in self.tk_vars.items()}
-        constants = calculate_derived_constants(constants)
+    def _on_save(self) -> None:
+        print("[DEBUG] Run ボタンが押されました")
 
-        print("[デバッグ追加] 派生変数計算後のconstants:", constants)
+        """
+        1. GUI の Tk 変数 → self.config_data へ安全にコピー
+        （vsl は mm/s、gamete_r は mm）
+        2. .ini に保存
+        3. シミュレーションを実行
+        """
+        # --- ① Tk → config_data（vsl, gamete_r は mm で保持） -----
+        for k, var in self.tk_vars.items():
+            try:
+                if isinstance(var, (tk.DoubleVar, tk.IntVar)):
+                    val = float(var.get()) if isinstance(var, tk.DoubleVar) else int(var.get())
+                    if k == "vsl":
+                        val /= 1000.0  # µm/s → mm/s
+                    elif k == "gamete_r":
+                        val /= 1000.0  # µm  → mm
+                    self.config_data[k] = val
+                else:
+                    self.config_data[k] = var.get()
+            except Exception:
+                self.config_data[k] = var.get()
 
-        sim = SpermSimulation(constants)
+        # display_mode（ラジオボタン）
+        mode = self.tk_vars["display_mode"].get()
+        modes = [mode] if mode else []
+        self.config_data["display_mode"] = modes
 
-        result_dir = "results"
-        save_name = "simulation_result"
-        save_flag = self.save_var.get()
+        # --- ② shape specific parameters -------------------------------
+        shape = str(self.config_data.get("shape", "")).lower()
+        vol_ul = float(self.config_data.get("vol", 0.0))
 
-        sim.run(constants, result_dir, save_name, save_flag)
+        if shape == "cube":
+            edge = vol_ul ** (1 / 3)
+            half = edge / 2
+            self.config_data.update(
+                edge=edge,
+                x_min=-half, x_max=half,
+                y_min=-half, y_max=half,
+                z_min=-half, z_max=half,
+            )
 
-        # ↓↓↓ ここから明確な表示モードの分岐処理にします ↓↓↓
-        display_mode = self.tk_vars["display_mode"].get().strip()
-        print(f"[確認] 描画モード：{display_mode}")
+        elif shape == "drop":
+            r = (3 * vol_ul / (4 * math.pi)) ** (1 / 3)
+            self.config_data.update(
+                drop_r=r,
+                radius=r,
+                x_min=-r, x_max=r,
+                y_min=-r, y_max=r,
+                z_min=-r, z_max=r,
+            )
 
-        if display_mode == '2D':
-            from tools.plot_utils import plot_2d_trajectories
-            plot_2d_trajectories(sim.trajectory, sim.constants)
+        elif shape == "spot":
+            angle = float(self.config_data.get("spot_angle", 0.0))
+            spot_r, bottom_r, bottom_h = _calc_spot_geometry(vol_ul, angle)
+            self.config_data.update(
+                spot_r=spot_r,
+                spot_bottom_r=bottom_r,
+                spot_bottom_height=bottom_h,
+                radius=spot_r,
+                x_min=-bottom_r, x_max=bottom_r,
+                y_min=-bottom_r, y_max=bottom_r,
+                z_min=bottom_h,
+                z_max=spot_r,
+            )
 
-        elif display_mode == '3D':
-            from tools.plot_utils import plot_3d_movie_trajectories
-            plot_3d_movie_trajectories(sim.trajectory, sim.constants)
+        elif shape == "ceros":
+            self.config_data.update(
+                x_min=-8.15, x_max=8.15,
+                y_min=-8.15, y_max=8.15,
+                z_min=-8.15, z_max=8.15,
+            )
 
-        elif display_mode == 'movie':
-            from tools.movie_utils import render_3d_movie
+        # --- ③ generic parameters ------------------------------------
+        vsl = float(self.config_data.get("vsl", 0.0))
+        hz = float(self.config_data.get("sample_rate_hz", 1.0))  # ← 明確に統一
+        self.config_data.update(
+            step_length=vsl / hz if hz else 0.0,
+            limit=1e-9,
+        )
+
+        # --- シミュレーションステップ数を sim_min と sample_rate_hz から計算 ---
+        sim_min = float(self.config_data.get("sim_min", 0.0))
+        self.config_data["number_of_steps"] = int(sim_min * 60 * hz)
+
+        # --- ④ 派生値計算（互換性用） ---------------------------------
+        self.config_data = calculate_derived_constants(self.config_data)
+
+        # --- ⑤ ini 保存 -----------------------------------------------
+        save_config(self.config_data)
+
+        # --- ⑥ シミュレーション実行 --------------------------------------
+        sim = SpermSimulation(self.config_data)
+        sim.run(
+            self.config_data,
+            './results',
+            'sim_result',
+            self.save_var.get()
+        )
+
+        if "movie" in self.config_data["display_mode"]:
+            from spermsim.coremovie import render_3d_movie
             render_3d_movie(sim.trajectory, sim.vectors, sim.constants)
 
-        else:
-            raise ValueError(f"無効な描画モードです: {display_mode}")
 
-        save_config(constants)
-
-
-
-
+        # --- ⑦ 描画 -----------------------------------------------------
+        if "2D" in modes:
+            plot_2d_trajectories(np.array(sim.trajectory), self.config_data)
+        elif "3D" in modes:
+            plot_3d_trajectories(np.array(sim.trajectory), self.config_data)
+        elif "movie" in modes:
+            sim.plot_movie_trajectories()   # 実装に合わせて
 
     # ---------------------------------------------------------------------
     # 起動時に .ini から各 Tk 変数を復元
@@ -406,3 +466,77 @@ if __name__ == "__main__":
     print("[DEBUG] starting SimApp ...")
     app = SimApp()
     app.mainloop()
+
+
+# --- SimApp拡張 ---
+
+
+    def run_simulation_from_gui(self):
+        """Runボタンが押されたときに呼ばれるGUIイベント：設定 → 実行 → 表示"""
+        import os
+        from tools.movie_utils import render_3d_movie
+
+        ini_path = self.config_path.get()
+        if not ini_path or not os.path.isfile(ini_path):
+            print("[ERROR] .iniファイルが指定されていません。")
+            return
+
+        print(f"[DEBUG] .iniファイル読込: {ini_path}")
+
+        sim = SimulationManager(config_path=ini_path)
+        trajectory, vectors = sim.run_simulation()
+
+        self.trajectory = trajectory
+        self.vectors = vectors
+        self.constants = sim.get_constants()
+
+        # --- 2D表示 ---
+        plot_trajectories(self.trajectory, self.constants)
+
+        # --- 3Dムービー出力（チェックボックスで制御）---
+        if self.save_movie_var.get():
+            render_3d_movie(self.trajectory, self.vectors, self.constants, format=self.format_var.get())
+
+        self.progress["value"] = 100
+        self.log("[INFO] シミュレーション完了")
+
+
+
+    def setup_save_checkbox(self, parent):
+        self.save_movie_var = tk.BooleanVar()
+        self.save_movie_var.set(True)
+        ttk.Checkbutton(
+            parent,
+            text="3Dムービーを保存する",
+            variable=self.save_movie_var
+        ).pack(anchor="w", padx=10, pady=5)
+    
+
+
+
+    def setup_format_selector(self, parent):
+        self.format_var = tk.StringVar()
+        self.format_var.set("mp4")  # デフォルトはMP4
+
+        frame = ttk.LabelFrame(parent, text="保存形式", padding=5)
+        frame.pack(anchor="w", padx=10, pady=5)
+
+        ttk.Radiobutton(frame, text="MP4", variable=self.format_var, value="mp4").pack(anchor="w")
+        ttk.Radiobutton(frame, text="GIF", variable=self.format_var, value="gif").pack(anchor="w")
+
+
+
+    def setup_progress_and_log(self, parent):
+        from tkinter import scrolledtext
+
+        self.progress = ttk.Progressbar(parent, length=300, mode='determinate')
+        self.progress.pack(padx=10, pady=5)
+
+        self.log_box = scrolledtext.ScrolledText(parent, height=6, width=60, state='disabled')
+        self.log_box.pack(padx=10, pady=5)
+
+    def log(self, message: str):
+        self.log_box.config(state='normal')
+        self.log_box.insert(tk.END, message + '\n')
+        self.log_box.see(tk.END)
+        self.log_box.config(state='disabled')

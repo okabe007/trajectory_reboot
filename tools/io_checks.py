@@ -1,7 +1,7 @@
 import numpy as np
 from numpy import linalg as LA
 from typing import Tuple
-from io_status import IOStatus
+from tools.enums import IOStatus
 import numpy as np
 
 def IO_check_drop(

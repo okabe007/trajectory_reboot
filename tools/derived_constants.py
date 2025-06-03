@@ -1,102 +1,154 @@
-from __future__ import annotations     # ← 1 行目
-from typing import Dict, Tuple
+# tools/derived_constants.py
 
-# ------------------------------------------------------------
-# メイン関数  -------------------------------------------------
-# ------------------------------------------------------------
-def calculate_derived_constants(constants: Dict[str, float]) -> Dict[str, float]:
+import numpy as np
+
+def calculate_derived_constants(raw_constants):
     """
-    GUI／.ini で受け取った設定から派生変数を生成するユーティリティ。
-        ・空間座標・形状パラメータ → mm に統一
-        ・速度 vsl                 → mm/s で扱う
+    GUI から渡される raw_constants の中にある
+      - "shape"                   : str ("cube", "drop", "spot", …)
+      - "gamete_r"                : μm 単位の卵子半径
+      - "drop_r"                  : μm 単位の drop 半径
+      - "spot_r"                  : μm 単位の spot 半径
+      - "spot_bottom_r"           : μm 単位の spot 底面半径
+      - "spot_bottom_height"      : μm 単位の spot 底面高さ
+      - "medium_volume_uL"        : μL 単位（= mm³）の媒質体積
+      - "gamete_x_um", "gamete_y_um", "gamete_z_um"（卵子中心の μm 座標）
+      - さらにシミュレーションに必要なパラメータ（例: "step_length", "time_step", "n_sperm" など）
+    を受け取り、次の処理をして辞書を返します。
+
+    1. raw_constants を丸ごとコピーして保持する（シミュレーション用キーを消さないため）
+    2. 各種 μm 単位パラメータを mm 単位に変換して同名キーで上書き
+       - "gamete_r", "drop_r", "spot_r", "spot_bottom_r", "spot_bottom_height" → mm
+    3. 媒質体積 ("medium_volume_uL"：μL=mm³) → 半径 (mm) を計算し "medium_radius" を追加
+    4. "shape" ごとに x_min～z_max を mm 単位で計算して上書き
+    5. 卵子中心座標を μm→mm に変換して "egg_center" キーに np.array([x_mm, y_mm, z_mm]) として追加
+
+    戻り値の constants には、上記の処理で追加・上書きされた mm 単位キーと、
+    raw_constants にもともと含まれていたすべてのシミュレーション用キーが混在します。
     """
-    # ---------- 基本パラメータ ------------------------------------------
-    vsl     = float(constants.get("vsl", 0.0))            # mm/s
-    hz      = float(constants.get("sample_rate_hz", 1.0))  # Hz
 
-    # 単位変換 -----------------------------------------------------
-    gamete_raw = float(constants.get("gamete_r", 0.0))
-    gamete_r = gamete_raw / 1_000.0 if gamete_raw > 10 else gamete_raw
-    constants["gamete_r"] = gamete_r
+    # ─── ① raw_constants を丸ごとコピーして「既存のキー」をすべて保持 ───
+    constants = raw_constants.copy()
 
-    if "drop_r" in constants:
-        r_raw = float(constants["drop_r"])
-        constants["drop_r"] = r_raw / 1_000.0 if r_raw > 10 else r_raw
-        constants.setdefault("radius", constants["drop_r"])
+    # ─── ② shape を lower() して上書き ───
+    shape = constants.get("shape", "cube").lower()
+    constants["shape"] = shape
 
-    if "spot_r" in constants:
-        r_raw = float(constants["spot_r"])
-        constants["spot_r"] = r_raw / 1_000.0 if r_raw > 10 else r_raw
-        constants.setdefault("radius", constants["spot_r"])
+    # ─── ③ 卵子半径 (μm → mm) ───
+    gamete_r_um = float(constants.get("gamete_r", 50.0))  # μm
+    gamete_r_mm = gamete_r_um / 1000.0                     # → mm
+    constants["gamete_r"] = gamete_r_mm
 
-    if "spot_bottom_height" in constants:
-        b_raw = float(constants["spot_bottom_height"])
-        constants["spot_bottom_height"] = b_raw / 1_000.0 if b_raw > 10 else b_raw
+    # ─── ④ drop 形状の半径 (μm → mm) ───
+    drop_r_um = float(constants.get("drop_r", 0.0))       # μm
+    drop_r_mm = drop_r_um / 1000.0                        # → mm
+    constants["drop_r"] = drop_r_mm
 
-    if "spot_bottom_r" in constants:
-        br_raw = float(constants["spot_bottom_r"])
-        constants["spot_bottom_r"] = br_raw / 1_000.0 if br_raw > 10 else br_raw
+    # ─── ⑤ spot 形状の半径および底面半径・底面高さ (μm → mm) ───
+    spot_r_um = float(constants.get("spot_r", 0.0))       # μm
+    spot_r_mm = spot_r_um / 1000.0                        # → mm
+    constants["spot_r"] = spot_r_mm
 
-    # ---------- 共通パラメータ ------------------------------------------
-    constants.update(
-        vsl=vsl,
-        step_length=vsl / hz if hz else 0.0,
-        limit=1e-9,
-        gamete_r=gamete_r,
-    )
+    spot_bottom_r_um = float(constants.get("spot_bottom_r", spot_r_um))  # μm
+    spot_bottom_r_mm = spot_bottom_r_um / 1000.0                          # → mm
+    constants["spot_bottom_r"] = spot_bottom_r_mm
 
-    # number_of_sperm を濃度と体積から計算（µL→mL 換算）
-    if "vol" in constants and "sperm_conc" in constants:
-        try:
-            vol_ul = float(constants["vol"])
-            conc = float(constants["sperm_conc"])
-            constants["number_of_sperm"] = int(conc * vol_ul / 1000)
-        except Exception:
-            pass
+    spot_bottom_h_um = float(constants.get("spot_bottom_height", 0.0))     # μm
+    spot_bottom_h_mm = spot_bottom_h_um / 1000.0                           # → mm
+    constants["spot_bottom_height"] = spot_bottom_h_mm
+
+    # ─── ⑥ 媒質体積 (μL=mm³) → 半径 (mm) ───
+    #     1 μL = 1 mm³ なので、raw_constants["medium_volume_uL"] をそのまま mm³ として扱う
+    medium_volume_uL = float(constants.get("medium_volume_uL", 0.0))
+    medium_volume_mm3 = medium_volume_uL  # μL=mm³
+    if medium_volume_mm3 > 0:
+        medium_radius_mm = ((3.0 * medium_volume_mm3) / (4.0 * np.pi)) ** (1.0 / 3.0)
+    else:
+        medium_radius_mm = 0.0
+    constants["medium_radius"] = medium_radius_mm
+
+    # ─── ⑦ プロット用リミット (x_min, x_max, y_min, y_max, z_min, z_max) を mm 単位で計算 ───
+    if shape == "cube":
+        half = medium_radius_mm
+        constants["x_min"] = -half
+        constants["x_max"] =  half
+        constants["y_min"] = -half
+        constants["y_max"] =  half
+        constants["z_min"] =  0.0
+        constants["z_max"] =  2.0 * half
+
+    elif shape == "drop":
+        r = drop_r_mm
+        constants["x_min"] = -r
+        constants["x_max"] =  r
+        constants["y_min"] = -r
+        constants["y_max"] =  r
+        constants["z_min"] =  0.0
+        constants["z_max"] =  2.0 * r
+
+    elif shape == "spot":
+        R   = spot_r_mm
+        b_r = spot_bottom_r_mm
+        b_h = spot_bottom_h_mm
+
+        constants["x_min"] = -b_r
+        constants["x_max"] =  b_r
+        constants["y_min"] = -b_r
+        constants["y_max"] =  b_r
+        constants["z_min"] =  0.0
+        constants["z_max"] =  R
+
+    else:
+        # その他の形状は cube と同様に囲む
+        half = medium_radius_mm
+        constants["x_min"] = -half
+        constants["x_max"] =  half
+        constants["y_min"] = -half
+        constants["y_max"] =  half
+        constants["z_min"] =  0.0
+        constants["z_max"] =  2.0 * half
+
+    # ─── ⑧ 卵子中心座標を μm→mm で計算し "egg_center" キーに追加 ───
+    #      _egg_position(raw_constants) は μm 単位で (x_um, y_um, z_um) を返す想定
+    egg_pos_um = _egg_position(raw_constants)  # [x_um, y_um, z_um]
+
+    egg_x_mm = egg_pos_um[0] / 1000.0
+    egg_y_mm = egg_pos_um[1] / 1000.0
+
+    # "spot" の場合は底面高さを raw_z_min_um とし、それ以外は 0
+    if shape == "spot":
+        raw_z_min_um = float(constants.get("spot_bottom_height", 0.0))
+    else:
+        raw_z_min_um = 0.0
+
+    egg_z_mm = (raw_z_min_um + gamete_r_um) / 1000.0
+    constants["egg_center"] = np.array([egg_x_mm, egg_y_mm, egg_z_mm])
 
     return constants
 
-def _egg_position(constants: dict) -> list[float]:
+
+def get_limits(constants):
     """
-    卵子の位置を shape と egg_localization に応じて返す。
-    cube, drop, spot 各形状で計算式が異なる。
+    calculate_derived_constants が返した mm 単位の
+    x_min ～ z_max をそのまま返す。
     """
-    mode = constants.get("egg_localization", "center")
-    shape = constants.get("shape", "cube").lower()
-    gamete_r = constants.get("gamete_r", 0.05)
-
-    if shape == "cube" or shape == "drop":
-        z_min = constants.get("z_min", -1.0)
-        z_max = constants.get("z_max", 1.0)
-        if mode == "center":
-            return [0.0, 0.0, 0.0]
-        elif mode == "bottom_center":
-            return [0.0, 0.0, z_min + gamete_r]
-        elif mode == "top_center":
-            return [0.0, 0.0, z_max - gamete_r]
-
-    elif shape == "spot":
-        spot_r = constants.get("spot_r", 1.0)
-        spot_bottom_height = constants.get("spot_bottom_height", 0.0)
-        if mode == "center":
-            return [0.0, 0.0, (spot_r + spot_bottom_height) / 2]
-        elif mode == "bottom_center":
-            return [0.0, 0.0, spot_bottom_height + gamete_r]
-        elif mode == "top_center":
-            return [0.0, 0.0, spot_r - gamete_r]
-
-    raise ValueError(f"Unknown shape '{shape}' or egg_localization mode '{mode}'")
+    return (
+        constants["x_min"],
+        constants["x_max"],
+        constants["y_min"],
+        constants["y_max"],
+        constants["z_min"],
+        constants["z_max"]
+    )
 
 
-# ------------------------------------------------------------
-# plot_utils.py 用の軽量ヘルパー --------------------------------
-# ------------------------------------------------------------
-def get_limits(constants: dict) -> tuple:
-    x_min = constants.get("x_min", -1.0)
-    x_max = constants.get("x_max", 1.0)
-    y_min = constants.get("y_min", -1.0)
-    y_max = constants.get("y_max", 1.0)
-    z_min = constants.get("z_min", -1.0)
-    z_max = constants.get("z_max", 1.0)
-
-    return x_min, x_max, y_min, y_max, z_min, z_max
+def _egg_position(raw_constants):
+    """
+    GUI から渡された raw_constants に基づき、卵子中心を μm 単位で返す関数。
+    ここでは例として、"gamete_x_um", "gamete_y_um", "gamete_z_um" の値を返しますが、
+    実際は適宜ロジックを実装してください。
+    """
+    x_um = raw_constants.get("gamete_x_um", 0.0)
+    y_um = raw_constants.get("gamete_y_um", 0.0)
+    z_um = raw_constants.get("gamete_z_um", 0.0)
+    return np.array([x_um, y_um, z_um])

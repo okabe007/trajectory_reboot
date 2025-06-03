@@ -1,0 +1,11 @@
+[DEBUG] .iniファイル読込: sperm_config.ini
+[DEBUG] .iniファイル読込: sperm_config.ini
+[DEBUG] .iniファイル読込: sperm_config.ini
+[DEBUG] .iniファイル読込: sperm_config.ini
+[DEBUG] .iniファイル読込: sperm_config.ini
+[DEBUG] .iniファイル読込: sperm_config.ini
+[DEBUG] .iniファイル読込: sperm_config.ini
+[DEBUG] .iniファイル読込: sperm_config.ini
+[DEBUG] .iniファイル読込: sperm_config.ini
+[DEBUG] .iniファイル読込: sperm_config.ini
+[DEBUG] .iniファイル読込: sperm_config.ini
